@@ -200,7 +200,7 @@ jobs:
               Please respond with: 'CloudWaddie Agent test successful! The workflow is working correctly.'"
             fi
             
-            stdbuf -oL -eL bunx oh-my-opencode@latest run --timeout 600000 "$TEST_PROMPT"
+            stdbuf -oL -eL bunx oh-my-opencode@latest run --print-logs --timeout 600000 "$TEST_PROMPT"
             exit 0
           fi
 
@@ -232,7 +232,7 @@ jobs:
           PROMPT="${PROMPT//TITLE_PLACEHOLDER/$CONTEXT_TITLE}"
           PROMPT="${PROMPT//COMMENT_PLACEHOLDER/$USER_COMMENT}"
 
-          stdbuf -oL -eL bunx oh-my-opencode@latest run --timeout 600000 "$PROMPT"
+          stdbuf -oL -eL bunx oh-my-opencode@latest run --print-logs --timeout 600000 "$PROMPT"
 
       - name: Update reaction and remove label
         if: always()
