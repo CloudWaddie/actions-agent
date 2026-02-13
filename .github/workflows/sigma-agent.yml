@@ -175,9 +175,36 @@ jobs:
           CONTEXT_TITLE: ${{ steps.context.outputs.title }}
           REPO_NAME: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_PROMPT: ${{ github.event.inputs.prompt }}
         run: |
           export PATH="$HOME/.opencode/bin:$PATH"
 
+          # Handle workflow_dispatch (manual testing) differently
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ -n "$MANUAL_PROMPT" ]]; then
+              # User provided a custom prompt
+              TEST_PROMPT="You are cloudwaddie-agent, an autonomous bot made by CloudWaddie.
+
+              User's test request: $MANUAL_PROMPT
+
+              Repository: $REPO_NAME
+
+              This is a manual test run. Respond with a simple acknowledgment."
+            else
+              # Default test prompt
+              TEST_PROMPT="You are cloudwaddie-agent, an autonomous bot made by CloudWaddie.
+
+              This is a manual test run of the workflow in repository $REPO_NAME.
+
+              Please respond with: 'CloudWaddie Agent test successful! The workflow is working correctly.'"
+            fi
+            
+            bunx oh-my-opencode@latest run --timeout 600000 "$TEST_PROMPT"
+            exit 0
+          fi
+
+          # Normal issue_comment flow
           PROMPT=$(cat <<'PROMPT_EOF'
           You are cloudwaddie-agent, an autonomous bot made by CloudWaddie.
 
