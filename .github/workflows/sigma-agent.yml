@@ -200,11 +200,23 @@ jobs:
               Please respond with: 'CloudWaddie Agent test successful! The workflow is working correctly.'"
             fi
             
-            stdbuf -oL -eL bun x oh-my-opencode@latest run --timeout 600000 "$TEST_PROMPT"
+            # Run oh-my-opencode with timeout wrapper
+            # Workaround for https://github.com/code-yeongyu/oh-my-opencode/issues/1712
+            stdbuf -oL -eL bun x oh-my-opencode@latest run --timeout 600000 "$TEST_PROMPT" 2>&1 | tee /tmp/agent-output.log &
+            AGENT_PID=$!
+            
+            while kill -0 $AGENT_PID 2>/dev/null; do
+              if grep -q "All tasks completed" /tmp/agent-output.log 2>/dev/null; then
+                sleep 2
+                kill $AGENT_PID 2>/dev/null || true
+                break
+              fi
+              sleep 1
+            done
+            
             exit 0
           fi
 
-          # Normal issue_comment flow
           PROMPT=$(cat <<'PROMPT_EOF'
           You are cloudwaddie-agent, an autonomous bot made by CloudWaddie.
 
@@ -232,7 +244,18 @@ jobs:
           PROMPT="${PROMPT//TITLE_PLACEHOLDER/$CONTEXT_TITLE}"
           PROMPT="${PROMPT//COMMENT_PLACEHOLDER/$USER_COMMENT}"
 
-          stdbuf -oL -eL bun x oh-my-opencode@latest run --timeout 600000 "$PROMPT"
+          stdbuf -oL -eL bun x oh-my-opencode@latest run --timeout 600000 "$PROMPT" 2>&1 | tee /tmp/agent-output.log &
+          AGENT_PID=$!
+          
+          while kill -0 $AGENT_PID 2>/dev/null; do
+            if grep -q "All tasks completed" /tmp/agent-output.log 2>/dev/null; then
+              sleep 2
+              kill $AGENT_PID 2>/dev/null || true
+              break
+            fi
+            sleep 1
+          done
+
 
       - name: Update reaction and remove label
         if: always()
