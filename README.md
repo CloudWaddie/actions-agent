@@ -19,6 +19,3 @@ A GitHub **workflow template** that runs **cloudwaddie-agent** (an autonomous bo
 - The workflow only runs on mentions by a **contributor** (OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR).
 - Uses **free OpenCode models** by default (opencode/big-pickle)
 - Authentication is optional - works with free models out of the box
-
-## Credits
-Based on the Sisyphus agent workflow from https://github.com/code-yeongyu/oh-my-opencode
