@@ -1,4 +1,4 @@
-name: Sigma Agent (by CloudWaddie)
+name: CloudWaddie Agent
 
 on:
   workflow_dispatch:
@@ -27,10 +27,10 @@ jobs:
           token: ${{ github.token }}
           fetch-depth: 0
 
-      - name: Configure Git as sigma-agent
+      - name: Configure Git as cloudwaddie-agent
         run: |
-          git config user.name "sigma-agent"
-          git config user.email "sigma-agent@users.noreply.github.com"
+          git config user.name "cloudwaddie-agent"
+          git config user.email "cloudwaddie-agent@users.noreply.github.com"
 
       - name: Ensure tmux is available (Linux)
         if: runner.os == 'Linux'
@@ -53,7 +53,7 @@ jobs:
 
       - name: Setup OpenCode with oh-my-opencode
         env:
-          OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
+          OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON || '' }}
         run: |
           export PATH="$HOME/.opencode/bin:$PATH"
 
@@ -79,10 +79,14 @@ jobs:
           # List available free opencode models (for visibility)
           opencode models
 
-          # Configure OpenCode auth
-          mkdir -p ~/.local/share/opencode
-          echo "$OPENCODE_AUTH_JSON" > ~/.local/share/opencode/auth.json
-          chmod 600 ~/.local/share/opencode/auth.json
+          # Configure OpenCode auth (if provided)
+          if [[ -n "$OPENCODE_AUTH_JSON" ]]; then
+            mkdir -p ~/.local/share/opencode
+            echo "$OPENCODE_AUTH_JSON" > ~/.local/share/opencode/auth.json
+            chmod 600 ~/.local/share/opencode/auth.json
+          else
+            echo "No OPENCODE_AUTH_JSON provided - using free models only"
+          fi
 
           # Set default model to opencode/big-pickle
           CONFIG=~/.config/opencode/opencode.json
@@ -145,23 +149,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          gh label create "sigma-agent: working" \
+          gh label create "cloudwaddie-agent: working" \
             --repo "${{ github.repository }}" \
             --color "fcf2e1" \
-            --description "Sigma-agent is currently working on this" \
+            --description "CloudWaddie-agent is currently working on this" \
             --force || true
 
           if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
             gh pr edit "${{ steps.context.outputs.number }}" \
               --repo "${{ github.repository }}" \
-              --add-label "sigma-agent: working" || true
+              --add-label "cloudwaddie-agent: working" || true
           else
             gh issue edit "${{ steps.context.outputs.number }}" \
               --repo "${{ github.repository }}" \
-              --add-label "sigma-agent: working" || true
+              --add-label "cloudwaddie-agent: working" || true
           fi
 
-      - name: Run sigma-agent (oh-my-opencode)
+      - name: Run cloudwaddie-agent (oh-my-opencode)
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           USER_COMMENT: ${{ steps.context.outputs.comment }}
@@ -175,7 +179,7 @@ jobs:
           export PATH="$HOME/.opencode/bin:$PATH"
 
           PROMPT=$(cat <<'PROMPT_EOF'
-          You are sigma-agent, an autonomous bot made by CloudWaddie.
+          You are cloudwaddie-agent, an autonomous bot made by CloudWaddie.
 
           First, read full issue/PR context and comments. Then respond with a helpful comment.
           Avoid making code changes unless explicitly requested.
@@ -210,7 +214,7 @@ jobs:
         run: |
           if [[ -n "${{ steps.context.outputs.comment_id }}" ]]; then
             REACTION_ID=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
-              --jq '.[] | select(.content == "eyes" and .user.login == "sigma-agent") | .id' | head -1)
+              --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' | head -1)
             if [[ -n "$REACTION_ID" ]]; then
               gh api -X DELETE "/repos/${{ github.repository }}/reactions/${REACTION_ID}" || true
             fi
@@ -223,10 +227,10 @@ jobs:
             if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
               gh pr edit "${{ steps.context.outputs.number }}" \
                 --repo "${{ github.repository }}" \
-                --remove-label "sigma-agent: working" || true
+                --remove-label "cloudwaddie-agent: working" || true
             else
               gh issue edit "${{ steps.context.outputs.number }}" \
                 --repo "${{ github.repository }}" \
-                --remove-label "sigma-agent: working" || true
+                --remove-label "cloudwaddie-agent: working" || true
             fi
           fi
