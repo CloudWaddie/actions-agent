@@ -47,9 +47,18 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install oh-my-opencode (dependency)
+      - name: Checkout oh-my-opencode dev branch
+        uses: actions/checkout@v5
+        with:
+          repository: code-yeongyu/oh-my-opencode
+          ref: dev
+          path: oh-my-opencode
+
+      - name: Build oh-my-opencode from source
+        working-directory: oh-my-opencode
         run: |
-          bunx oh-my-opencode@latest --version
+          bun install
+          bun run build
 
       - name: Setup OpenCode with oh-my-opencode
         env:
@@ -73,8 +82,8 @@ jobs:
           fi
           opencode --version
 
-          # Install oh-my-opencode plugin
-          bunx oh-my-opencode@latest install --no-tui --claude=no --openai=no --gemini=no --copilot=no --opencode-zen=no
+          # Install oh-my-opencode plugin using locally built version
+          bun run oh-my-opencode/dist/cli/index.js install --no-tui --claude=no --openai=no --gemini=no --copilot=no --opencode-zen=no
 
           # List available free opencode models (for visibility)
           opencode models
@@ -200,20 +209,7 @@ jobs:
               Please respond with: 'CloudWaddie Agent test successful! The workflow is working correctly.'"
             fi
             
-            # Run oh-my-opencode with timeout wrapper
-            # Workaround for https://github.com/code-yeongyu/oh-my-opencode/issues/1712
-            stdbuf -oL -eL bun x oh-my-opencode@latest run --timeout 600000 "$TEST_PROMPT" 2>&1 | tee /tmp/agent-output.log &
-            AGENT_PID=$!
-            
-            while kill -0 $AGENT_PID 2>/dev/null; do
-              if grep -q "All tasks completed" /tmp/agent-output.log 2>/dev/null; then
-                sleep 2
-                kill $AGENT_PID 2>/dev/null || true
-                break
-              fi
-              sleep 1
-            done
-            
+            stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run --timeout 600000 "$TEST_PROMPT"
             exit 0
           fi
 
@@ -244,17 +240,7 @@ jobs:
           PROMPT="${PROMPT//TITLE_PLACEHOLDER/$CONTEXT_TITLE}"
           PROMPT="${PROMPT//COMMENT_PLACEHOLDER/$USER_COMMENT}"
 
-          stdbuf -oL -eL bun x oh-my-opencode@latest run --timeout 600000 "$PROMPT" 2>&1 | tee /tmp/agent-output.log &
-          AGENT_PID=$!
-          
-          while kill -0 $AGENT_PID 2>/dev/null; do
-            if grep -q "All tasks completed" /tmp/agent-output.log 2>/dev/null; then
-              sleep 2
-              kill $AGENT_PID 2>/dev/null || true
-              break
-            fi
-            sleep 1
-          done
+          stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run --timeout 600000 "$PROMPT"
 
 
       - name: Update reaction and remove label
