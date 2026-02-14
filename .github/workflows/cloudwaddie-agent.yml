@@ -33,7 +33,9 @@ jobs:
        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association || ''))
 
     permissions:
-      contents: read
+      contents: write
+      issues: write
+      pull-requests: write
 
     steps:
       # Checkout with cloudwaddie-agent's PAT
