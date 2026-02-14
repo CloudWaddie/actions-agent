@@ -8,30 +8,114 @@ on:
         required: false
   issue_comment:
     types: [created]
+  issues:
+    types: [opened, edited]
+  pull_request:
+    types: [opened, edited]
 
 jobs:
   agent:
     runs-on: ubuntu-latest
-    # @cloudwaddie-agent mention only (contributors, exclude self)
+    # @cloudwaddie-agent mention only (contributors, exclude self) + issues/PR triggers
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' &&
        contains(github.event.comment.body || '', '@cloudwaddie-agent') &&
        (github.event.comment.user.login || '') != 'cloudwaddie-agent' &&
-       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association || ''))
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association || '')) ||
+      github.event_name == 'issues' ||
+      github.event_name == 'pull_request'
+
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT }}
 
     permissions:
       contents: read
 
     steps:
-      # Checkout with cloudwaddie-agent's PAT
+      - name: Check if bot was mentioned and user is contributor
+        id: validation
+        if: github.event_name == 'issue_comment'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [[ ! "$COMMENT_BODY" =~ @cloudwaddie-agent ]]; then
+            echo "Bot not mentioned, skipping"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          AUTHOR_ASSOCIATION=$(gh api "repos/$REPO/issues/comments/${{ github.event.comment.id }}" --jq '.author_association')
+          
+          if [[ "$AUTHOR_ASSOCIATION" == "OWNER" ]] || \
+             [[ "$AUTHOR_ASSOCIATION" == "MEMBER" ]] || \
+             [[ "$AUTHOR_ASSOCIATION" == "COLLABORATOR" ]] || \
+             [[ "$AUTHOR_ASSOCIATION" == "CONTRIBUTOR" ]]; then
+            echo "User is a contributor, proceeding"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "User is not a contributor, skipping"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check user eligibility for issues/PRs
+        id: validation_issue_pr
+        if: github.event_name == 'issues' || github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [[ "$EVENT_NAME" == "issues" ]]; then
+            AUTHOR="${{ github.event.issue.user.login }}"
+          else
+            AUTHOR="${{ github.event.pull_request.user.login }}"
+          fi
+
+          AUTHOR_ASSOCIATION=$(gh api "repos/$REPO/issues/${{ github.event.issue.number || github.event.pull_request.number }}" --jq '.author_association')
+          
+          if [[ "$AUTHOR_ASSOCIATION" != "OWNER" ]] && \
+             [[ "$AUTHOR_ASSOCIATION" != "MEMBER" ]] && \
+             [[ "$AUTHOR_ASSOCIATION" != "COLLABORATOR" ]] && \
+             [[ "$AUTHOR_ASSOCIATION" != "CONTRIBUTOR" ]]; then
+            echo "User is not a contributor, skipping"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          USER_DATA=$(gh api "users/$AUTHOR")
+          CREATED_AT=$(echo "$USER_DATA" | jq -r '.created_at')
+          CREATED_DATE=$(date -d "$CREATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$CREATED_AT" +%s 2>/dev/null)
+          TODAY=$(date +%s)
+          DAYS_OLD=$(( (TODAY - CREATED_DATE) / 86400 ))
+
+          if [[ $DAYS_OLD -lt 30 ]]; then
+            echo "User account is only $DAYS_OLD days old (need 30+), skipping"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          else
+            echo "User account is $DAYS_OLD days old, proceeding"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v5
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         with:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
 
       # Git config - commits as cloudwaddie-agent
       - name: Configure Git as cloudwaddie-agent
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         run: |
           git config user.name "cloudwaddie-agent"
           git config user.email "cloudwaddie-agent@users.noreply.github.com"
@@ -43,7 +127,12 @@ jobs:
           gh auth status
 
       - name: Ensure tmux is available (Linux)
-        if: runner.os == 'Linux'
+        if: >-
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true'))
+          && runner.os == 'Linux'
         run: |
           set -euo pipefail
           if ! command -v tmux >/dev/null 2>&1; then
@@ -53,11 +142,21 @@ jobs:
           tmux -V
 
       - name: Setup Bun
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - name: Checkout oh-my-opencode dev branch
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         uses: actions/checkout@v5
         with:
           repository: code-yeongyu/oh-my-opencode
@@ -83,6 +182,11 @@ jobs:
 
       # Install OpenCode + configure local plugin + auth in single step
       - name: Setup OpenCode with oh-my-opencode
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         env:
           OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
         run: |
@@ -132,13 +236,23 @@ jobs:
       # Collect context
       - name: Collect Context
         id: context
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           EVENT_NAME: ${{ github.event_name }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
           COMMENT_ID_VAL: ${{ github.event.comment.id }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
           REPO: ${{ github.repository }}
         run: |
           if [[ "$EVENT_NAME" == "issue_comment" ]]; then
@@ -157,25 +271,70 @@ jobs:
               echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
             fi
             echo "title=${TITLE}" >> $GITHUB_OUTPUT
+            echo "comment=${COMMENT_BODY}" >> $GITHUB_OUTPUT
+          elif [[ "$EVENT_NAME" == "issues" ]]; then
+            ISSUE_NUM="$ISSUE_NUMBER"
+            AUTHOR="${{ github.event.issue.user.login }}"
+            echo "type=issue" >> $GITHUB_OUTPUT
+            echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
+            echo "title=${ISSUE_TITLE}" >> $GITHUB_OUTPUT
+            COMMENT_BODY="[Issue opened/edited]: ${ISSUE_TITLE}"
+            if [[ -n "$ISSUE_BODY" ]]; then
+              COMMENT_BODY="${COMMENT_BODY}\n\n${ISSUE_BODY}"
+            fi
+            echo "comment=${COMMENT_BODY}" >> $GITHUB_OUTPUT
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            PR_NUM="$PR_NUMBER"
+            AUTHOR="${{ github.event.pull_request.user.login }}"
+            echo "type=pr" >> $GITHUB_OUTPUT
+            echo "number=${PR_NUM}" >> $GITHUB_OUTPUT
+            echo "title=${PR_TITLE}" >> $GITHUB_OUTPUT
+            COMMENT_BODY="[PR opened/edited]: ${PR_TITLE}"
+            if [[ -n "$PR_BODY" ]]; then
+              COMMENT_BODY="${COMMENT_BODY}\n\n${PR_BODY}"
+            fi
+            echo "comment=${COMMENT_BODY}" >> $GITHUB_OUTPUT
           fi
 
-          echo "comment<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMENT_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
           echo "author=$AUTHOR" >> $GITHUB_OUTPUT
-          echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
+          echo "comment_id=" >> $GITHUB_OUTPUT
 
       # Add :eyes: reaction (as cloudwaddie-agent)
       - name: Add eyes reaction
-        if: steps.context.outputs.comment_id != ''
+        if: >-
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true'))
+          && steps.context.outputs.comment_id != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
             -X POST -f content="eyes" || true
 
+      - name: Add reaction to issue/PR
+        if: >-
+          (github.event_name == 'issues' || github.event_name == 'pull_request') &&
+          (steps.validation_issue_pr.outputs.should_run == 'true')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
+            gh api "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions" \
+              -X POST -f content="eyes" || true
+          else
+            gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
+              -X POST -f content="eyes" || true
+          fi
+
       - name: Add working label
-        if: steps.context.outputs.number != ''
+        if: >-
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true'))
+          && steps.context.outputs.number != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
@@ -195,7 +354,12 @@ jobs:
               --add-label "cloudwaddie-agent: working" || true
           fi
 
-      - name: Run oh-my-opencode
+      - name: Run cloudwaddie-agent (oh-my-opencode)
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           USER_COMMENT: ${{ steps.context.outputs.comment }}
@@ -244,25 +408,25 @@ jobs:
 
           **YOU MUST READ ALL CONTENT. NOT SOME. NOT MOST. ALL.**
 
-          1. **READ FULL CONVERSATION** - Execute ALL commands below before ANY other action:
-             - **Issues**: `gh issue view NUMBER_PLACEHOLDER --comments`
-             - **PRs**: Use ALL THREE commands to get COMPLETE context:
-               ```bash
-               gh pr view NUMBER_PLACEHOLDER --comments
-               gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/comments
-               gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/reviews
-               ```
-             
-             **WHAT TO EXTRACT FROM THE CONVERSATION:**
-             - The ORIGINAL issue/PR description (first message) - this is often the TRUE requirement
-             - ALL previous attempts and their outcomes
-             - ALL decisions made and their reasoning
-             - ALL feedback, criticism, and rejection reasons
-             - ANY linked issues, PRs, or external references
-             - The EXACT ask from the user who mentioned you
-             
-             **FAILURE TO READ EVERYTHING = GUARANTEED FAILURE**
-             You WILL make wrong assumptions. You WILL repeat past mistakes. You WILL miss critical context.
+           1. **READ FULL CONVERSATION** - Execute ALL commands below before ANY other action:
+              - **Issues**: `gh issue view NUMBER_PLACEHOLDER --comments`
+              - **PRs**: Use ALL THREE commands to get COMPLETE context:
+                ```bash
+                gh pr view NUMBER_PLACEHOLDER --comments
+                gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/comments
+                gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/reviews
+                ```
+              
+              **WHAT TO EXTRACT FROM THE CONVERSATION:**
+              - The ORIGINAL issue/PR description (first message) - this is often the TRUE requirement
+              - ALL previous attempts and their outcomes
+              - ALL decisions made and their reasoning
+              - ALL feedback, criticism, and rejection reasons
+              - ANY linked issues, PRs, or external references
+              - The EXACT ask from the user who mentioned you
+              
+              **FAILURE TO READ EVERYTHING = GUARANTEED FAILURE**
+              You WILL make wrong assumptions. You WILL repeat past mistakes. You WILL miss critical context.
 
            2. **CREATE TODOS IMMEDIATELY**: Right after reading, create your todo list using todo tools.
               - First todo: "Summarize issue/PR context and requirements"
@@ -281,7 +445,6 @@ jobs:
               - Plan everything BEFORE starting any work
 
           ---
-
 
           Plan everything using todo tools.
           Then investigate and satisfy the request. Only if user requested to you to work explicitly, then use plan agent to plan, todo obsessively then create a PR to `BRANCH_PLACEHOLDER` branch.
@@ -329,6 +492,26 @@ jobs:
 
             gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
               -X POST -f content="+1" || true
+          fi
+
+          if [[ "${{ github.event_name }}" == "issues" ]] || [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
+              REACTION_ID=$(gh api "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions" \
+                --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' | head -1)
+              if [[ -n "$REACTION_ID" ]]; then
+                gh api -X DELETE "/repos/${{ github.repository }}/reactions/${REACTION_ID}" || true
+              fi
+              gh api "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions" \
+                -X POST -f content="+1" || true
+            else
+              REACTION_ID=$(gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
+                --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' | head -1)
+              if [[ -n "$REACTION_ID" ]]; then
+                gh api -X DELETE "/repos/${{ github.repository }}/reactions/${REACTION_ID}" || true
+              fi
+              gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
+                -X POST -f content="+1" || true
+            fi
           fi
 
           if [[ -n "${{ steps.context.outputs.number }}" ]]; then
