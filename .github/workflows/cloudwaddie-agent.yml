@@ -55,6 +55,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
+          unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
           # GH_TOKEN environment variable is automatically used by gh CLI
           # Verify authentication works
           gh auth status || echo "Using GH_TOKEN environment variable for authentication"
