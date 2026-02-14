@@ -1,0 +1,128 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: YAML lint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          format: github
+          strict: true
+
+      - name: Check workflow files exist
+        run: |
+          if [ ! -d ".github/workflows" ]; then
+            echo "Error: .github/workflows directory not found"
+            exit 1
+          fi
+          echo "Found $(ls -1 .github/workflows/*.yml 2>/dev/null | wc -l) workflow files"
+
+      - name: Validate JSON files
+        run: |
+          for file in template.json; do
+            if [ -f "$file" ]; then
+              echo "Validating $file..."
+              if ! jq empty "$file" 2>/dev/null; then
+                echo "Error: Invalid JSON in $file"
+                exit 1
+              fi
+              echo "$file is valid JSON"
+            fi
+          done
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download actionlint
+        id: get_actionlint
+        run: |
+          mkdir -p _actionlint
+          curl -sSLo _actionlint/actionlint.zip "https://github.com/rhysd/actionlint/releases/download/v1.7.1/actionlint_1.7.1_linux_amd64.zip"
+          unzip -q _actionlint/actionlint.zip -d _actionlint
+          rm -f _actionlint/actionlint.zip
+
+      - name: Run actionlint
+        run: ./actionlint/actionlint -color -verbose .github/workflows/*.yml
+
+      - name: Check for sensitive data in workflows
+        run: |
+          echo "Checking for potential secrets in workflow files..."
+          for file in .github/workflows/*.yml; do
+            if grep -qiE '(password|token|secret|api_key|apikey|auth)' "$file"; then
+              echo "Warning: $file may contain sensitive patterns - ensure they're using secrets"
+            fi
+          done
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run ShellCheck on workflow scripts
+        uses: ludeeus/action-shellcheck@master
+        env:
+          SHELLCHECK_OPTS: -s bash -e SC1090,SC1091
+
+  yamllint-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate .yamllint config exists and is valid
+        run: |
+          if [ -f ".yamllint" ]; then
+            echo "Validating .yamllint configuration..."
+            # Check if it's valid YAML
+            if ! python3 -c "import yaml; yaml.safe_load(open('.yamllint'))" 2>/dev/null; then
+              # Try with a simpler check
+              if ! jq empty .yamllint 2>/dev/null; then
+                echo "Warning: .yamllint may not be valid YAML or JSON"
+              fi
+            fi
+            echo ".yamllint config exists"
+          else
+            echo "Warning: No .yamllint configuration file found"
+          fi
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check for gitignore
+        run: |
+          if [ -f ".gitignore" ]; then
+            echo ".gitignore found"
+            # Check for common sensitive files that should be ignored
+            SENSITIVE_FILES="env,.env,*.key,id_rsa,*.pem,secrets.json"
+            for pattern in $SENSITIVE_FILES; do
+              if grep -q "^$pattern$" .gitignore 2>/dev/null; then
+                echo "  ✓ $pattern is ignored"
+              fi
+            done
+          else
+            echo "Warning: No .gitignore file found"
+          fi
+
+      - name: Check workflow permissions
+        run: |
+          echo "Analyzing workflow permissions..."
+          for file in .github/workflows/*.yml; do
+            echo "Checking $file..."
+            # Extract and display permission settings
+            PERMS=$(grep -A5 "permissions:" "$file" 2>/dev/null || echo "No explicit permissions")
+            if [ -n "$PERMS" ]; then
+              echo "  Permissions found in $file"
+            fi
+          done
