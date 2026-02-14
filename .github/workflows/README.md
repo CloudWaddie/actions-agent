@@ -98,7 +98,31 @@ Go to your repository's **Settings → Secrets and variables → Actions** and a
    - Value: Paste the entire JSON
    - Click **Add secret**
 
-### 2. Enable Workflow Permissions
+### 2. Add Bot as Repository Collaborator
+
+**CRITICAL**: The bot account must have write access to the repository to add labels, reactions, and create PRs.
+
+**Steps**:
+1. Go to your repository's **Settings → Collaborators and teams** (or **Settings → Access** for organizations)
+2. Click **"Add people"** or **"Invite a collaborator"**
+3. Search for the bot user account (e.g., `cloudwaddie-agent`)
+4. Select **"Write"** role (or **"Triage"** for read-only bots)
+5. Click **"Add [username] to this repository"**
+6. If the bot account has email notifications enabled, accept the invitation
+   - Alternatively, the invitation can be accepted via: https://github.com/[OWNER]/[REPO]/invitations
+
+**Why this is required**:
+- Without collaborator access, the bot will fail with `403 Forbidden` or `404 Not Found` errors
+- Even with a valid PAT token, GitHub checks if the token's owner has repository access
+- The bot needs write access to:
+  - Add and remove labels
+  - Add reactions to issues/PRs/comments
+  - Create pull requests
+  - Push to feature branches
+
+**Security Note**: The bot should **NOT** have admin access. Write access is sufficient and safer.
+
+### 3. Enable Workflow Permissions
 
 Go to your repository's **Settings → Actions → General**:
 
@@ -107,7 +131,9 @@ Go to your repository's **Settings → Actions → General**:
 3. Check **"Allow GitHub Actions to create and approve pull requests"**
 4. Click **Save**
 
-### 3. Rename the Bot (Optional)
+**Note**: These permissions apply to the built-in `GITHUB_TOKEN`, but the bot uses the `GH_PAT` secret which has its own permissions based on the collaborator access level.
+
+### 4. Rename the Bot (Optional)
 
 If you want to use a different bot name instead of `cloudwaddie-agent`:
 
@@ -116,7 +142,7 @@ If you want to use a different bot name instead of `cloudwaddie-agent`:
 3. Update the workflow filename to match: `.github/workflows/your-bot-name.yml`
 4. Commit and push changes
 
-### 4. Test the Bot
+### 5. Test the Bot
 
 #### Manual Test (Workflow Dispatch)
 
@@ -192,6 +218,51 @@ By default, GitHub sends email notifications for every workflow run, which can b
 3. Is the workflow file enabled? (Actions → Workflows → CloudWaddie Agent → Enable)
 4. Check the Actions tab for workflow run logs
 
+### Bot fails with "403 Forbidden" or "404 Not Found" errors
+
+**Symptoms**:
+- Workflow runs but fails with errors like:
+  - `HTTP 404: Not Found (https://api.github.com/repos/OWNER/REPO/labels)`
+  - `GraphQL: [bot-name] does not have the correct permissions to execute AddLabelsToLabelable`
+  - `failed to update issue: 403 Forbidden`
+
+**Root Cause**: The bot user account is not added as a repository collaborator.
+
+**Solution**:
+1. Go to repository **Settings → Collaborators and teams**
+2. Verify the bot account (e.g., `cloudwaddie-agent`) is listed
+3. If not, follow [Step 2: Add Bot as Repository Collaborator](#2-add-bot-as-repository-collaborator)
+4. Ensure the bot has **Write** role (not just Read)
+5. Accept the collaboration invitation if pending
+
+**To verify the bot's access**:
+```bash
+# As the bot user, check access level
+gh api /repos/OWNER/REPO/collaborators/BOT_USERNAME/permission
+# Should return: "permission": "write" or "admin"
+```
+
+### Bot fails with "Invalid token" or "Bad credentials"
+
+**Symptoms**:
+- Workflow fails with authentication errors
+- `gh auth status` shows "Not logged in"
+
+**Root Cause**: The `GH_PAT` secret is invalid, expired, or has insufficient scopes.
+
+**Solution**:
+1. Create a new Personal Access Token:
+   - Go to https://github.com/settings/tokens/new
+   - Select **Classic** token
+   - Check `repo` and `workflow` scopes
+   - Generate and copy the token
+2. Update the repository secret:
+   - Go to repository **Settings → Secrets → Actions**
+   - Update `GH_PAT` with the new token
+3. Re-run the workflow
+
+**Security Warning**: Never share or expose PAT tokens in logs, code, or public places.
+
 ### Bot responds to itself (infinite loop)
 
 This shouldn't happen - the workflow has a check to prevent this. If it does:
@@ -203,6 +274,21 @@ This shouldn't happen - the workflow has a check to prevent this. If it does:
 The workflow has no timeout by default (uses GitHub's 6-hour limit). If you see timeouts:
 1. Check the workflow doesn't have `timeout-minutes: 10` or similar
 2. Remove any restrictive timeout settings
+
+### Bot accidentally pushes to main branch
+
+**Prevention**: The workflow has built-in safeguards:
+- Push step checks if current branch is `main` or `master` and blocks the push
+- Workflow instructions tell the bot to use fork workflow and create PRs
+
+**If this happens**:
+1. Check the "Push changes" step in the workflow has the branch check
+2. Enable branch protection rules:
+   - Go to **Settings → Branches → Add rule**
+   - Branch name pattern: `main` (or `master`)
+   - Check **"Require pull request reviews before merging"**
+   - Check **"Restrict who can push to matching branches"**
+   - Save changes
 
 ### Bot gives poor responses
 

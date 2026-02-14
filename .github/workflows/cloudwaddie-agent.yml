@@ -508,13 +508,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
+          
+          BRANCH=$(git branch --show-current)
+          
+          # NEVER push to main/master branches
+          if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
+            echo "❌ ERROR: Attempted to push to protected branch '$BRANCH'"
+            echo "The agent should create a feature branch and PR instead"
+            exit 0  # Exit gracefully without failing workflow
+          fi
+          
+          # Only commit and push if there are changes
           if [[ -n "$(git status --porcelain)" ]]; then
             git add -A
             git commit -m "chore: changes by cloudwaddie-agent" || true
-          fi
-
-          BRANCH=$(git branch --show-current)
-          if [[ "$BRANCH" != "main" && "$BRANCH" != "master" ]]; then
             git push origin "$BRANCH" || true
           fi
 
