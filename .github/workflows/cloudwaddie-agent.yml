@@ -12,59 +12,38 @@ on:
 jobs:
   agent:
     runs-on: ubuntu-latest
-    # Skip if the comment author is the bot itself (prevent infinite loops)
-    if: github.event_name == 'workflow_dispatch' || github.event.comment.user.login != 'cloudwaddie-agent'
-    env:
-      GH_TOKEN: ${{ secrets.GH_PAT }}
+    # @cloudwaddie-agent mention only (contributors, exclude self)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body || '', '@cloudwaddie-agent') &&
+       (github.event.comment.user.login || '') != 'cloudwaddie-agent' &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association || ''))
 
     permissions:
       contents: read
-      issues: write
-      pull-requests: write
 
     steps:
-      - name: Check if bot was mentioned and user is contributor
-        id: validation
-        if: github.event_name == 'issue_comment'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-          COMMENT_BODY: ${{ github.event.comment.body }}
-          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
-          REPO: ${{ github.repository }}
-        run: |
-          if [[ ! "$COMMENT_BODY" =~ @cloudwaddie-agent ]]; then
-            echo "Bot not mentioned, skipping"
-            echo "should_run=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          AUTHOR_ASSOCIATION=$(gh api "repos/$REPO/issues/comments/${{ github.event.comment.id }}" --jq '.author_association')
-          
-          if [[ "$AUTHOR_ASSOCIATION" == "OWNER" ]] || \
-             [[ "$AUTHOR_ASSOCIATION" == "MEMBER" ]] || \
-             [[ "$AUTHOR_ASSOCIATION" == "COLLABORATOR" ]] || \
-             [[ "$AUTHOR_ASSOCIATION" == "CONTRIBUTOR" ]]; then
-            echo "User is a contributor, proceeding"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          else
-            echo "User is not a contributor, skipping"
-            echo "should_run=false" >> $GITHUB_OUTPUT
-          fi
-
+      # Checkout with cloudwaddie-agent's PAT
       - uses: actions/checkout@v5
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
         with:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
 
+      # Git config - commits as cloudwaddie-agent
       - name: Configure Git as cloudwaddie-agent
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
         run: |
           git config user.name "cloudwaddie-agent"
           git config user.email "cloudwaddie-agent@users.noreply.github.com"
 
+      # gh CLI auth as cloudwaddie-agent
+      - name: Authenticate gh CLI as cloudwaddie-agent
+        run: |
+          echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
+          gh auth status
+
       - name: Ensure tmux is available (Linux)
-        if: (github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true') && runner.os == 'Linux'
+        if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           if ! command -v tmux >/dev/null 2>&1; then
@@ -74,30 +53,38 @@ jobs:
           tmux -V
 
       - name: Setup Bun
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - name: Checkout oh-my-opencode dev branch
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
         uses: actions/checkout@v5
         with:
           repository: code-yeongyu/oh-my-opencode
           ref: dev
           path: oh-my-opencode
 
-      - name: Build oh-my-opencode from source
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            oh-my-opencode/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('oh-my-opencode/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      # Build oh-my-opencode
+      - name: Build oh-my-opencode
         working-directory: oh-my-opencode
         run: |
           bun install
           bun run build
 
+      # Install OpenCode + configure local plugin + auth in single step
       - name: Setup OpenCode with oh-my-opencode
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
         env:
-          OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON || '' }}
+          OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
         run: |
           export PATH="$HOME/.opencode/bin:$PATH"
 
@@ -105,6 +92,8 @@ jobs:
           if ! command -v opencode &>/dev/null; then
             echo "Installing OpenCode..."
             curl -fsSL https://opencode.ai/install -o /tmp/opencode-install.sh
+            
+            # Try default installer first, fallback to re-download if it fails
             if file /tmp/opencode-install.sh | grep -q "shell script\|text"; then
               if ! bash /tmp/opencode-install.sh 2>&1; then
                 echo "Default installer failed, trying direct install..."
@@ -117,44 +106,32 @@ jobs:
           fi
           opencode --version
 
-          # Install oh-my-opencode plugin using locally built version
-          bun run oh-my-opencode/dist/cli/index.js install --no-tui --claude=no --openai=no --gemini=no --copilot=no --opencode-zen=no
+          # Run local oh-my-opencode install (uses built dist)
+          bun run oh-my-opencode/dist/cli/index.js install --no-tui --claude=no --openai=no --gemini=no --copilot=no
 
-          # List available free opencode models (for visibility)
-          opencode models
-
-          # Override plugin to use local source files (like sisyphus-agent does)
+          # Override plugin to use local file reference
           OPENCODE_JSON=~/.config/opencode/opencode.json
           REPO_PATH=$(pwd)/oh-my-opencode
           jq --arg path "file://$REPO_PATH/src/index.ts" '
             .plugin = [.plugin[] | select(. != "oh-my-opencode")] + [$path]
           ' "$OPENCODE_JSON" > /tmp/oc.json && mv /tmp/oc.json "$OPENCODE_JSON"
 
-          # Configure OpenCode auth (if provided)
+          # Configure auth if provided, otherwise use free models
           if [[ -n "$OPENCODE_AUTH_JSON" ]]; then
             mkdir -p ~/.local/share/opencode
             echo "$OPENCODE_AUTH_JSON" > ~/.local/share/opencode/auth.json
             chmod 600 ~/.local/share/opencode/auth.json
           else
-            echo "No OPENCODE_AUTH_JSON provided - using free models only"
+            echo "No auth provided - using free OpenCode models"
+            # Set default model to free tier
+            jq '.model = "opencode/big-pickle"' "$OPENCODE_JSON" > /tmp/oc.json && mv /tmp/oc.json "$OPENCODE_JSON"
           fi
 
-          # Set default model to opencode/big-pickle
-          CONFIG=~/.config/opencode/opencode.json
-          if [ -f "$CONFIG" ]; then
-            jq '(.model = "opencode/big-pickle")' "$CONFIG" > /tmp/oc.json && mv /tmp/oc.json "$CONFIG"
-          else
-            mkdir -p ~/.config/opencode
-            printf '%s\n' '{' '  "$schema": "https://opencode.ai/config.json",' '  "model": "opencode/big-pickle"' '}' > "$CONFIG"
-          fi
-          OMO=~/.config/opencode/oh-my-opencode.json
-          if [ -f "$OMO" ]; then
-            jq '(.model = "opencode/big-pickle")' "$OMO" > /tmp/omo.json && mv /tmp/omo.json "$OMO"
-          fi
+          cat "$OPENCODE_JSON"
 
+      # Collect context
       - name: Collect Context
         id: context
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           EVENT_NAME: ${{ github.event_name }}
@@ -169,6 +146,7 @@ jobs:
             AUTHOR="$COMMENT_AUTHOR"
             COMMENT_ID="$COMMENT_ID_VAL"
 
+            # Check if PR or Issue and get title
             ISSUE_DATA=$(gh api "repos/$REPO/issues/${ISSUE_NUM}")
             TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
             if echo "$ISSUE_DATA" | jq -e '.pull_request' > /dev/null; then
@@ -187,8 +165,9 @@ jobs:
           echo "author=$AUTHOR" >> $GITHUB_OUTPUT
           echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
 
+      # Add :eyes: reaction (as cloudwaddie-agent)
       - name: Add eyes reaction
-        if: (github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true') && steps.context.outputs.comment_id != ''
+        if: steps.context.outputs.comment_id != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
@@ -196,7 +175,7 @@ jobs:
             -X POST -f content="eyes" || true
 
       - name: Add working label
-        if: (github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true') && steps.context.outputs.number != ''
+        if: steps.context.outputs.number != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
@@ -205,7 +184,7 @@ jobs:
             --color "fcf2e1" \
             --description "CloudWaddie-agent is currently working on this" \
             --force || true
-
+          
           if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
             gh pr edit "${{ steps.context.outputs.number }}" \
               --repo "${{ github.repository }}" \
@@ -216,8 +195,7 @@ jobs:
               --add-label "cloudwaddie-agent: working" || true
           fi
 
-      - name: Run cloudwaddie-agent (oh-my-opencode)
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+      - name: Run oh-my-opencode
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           USER_COMMENT: ${{ steps.context.outputs.comment }}
@@ -227,52 +205,40 @@ jobs:
           CONTEXT_TITLE: ${{ steps.context.outputs.title }}
           REPO_NAME: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          EVENT_NAME: ${{ github.event_name }}
-          MANUAL_PROMPT: ${{ github.event.inputs.prompt }}
         run: |
           export PATH="$HOME/.opencode/bin:$PATH"
 
-          # Handle workflow_dispatch (manual testing) differently
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            if [[ -n "$MANUAL_PROMPT" ]]; then
-              # User provided a custom prompt
-              TEST_PROMPT="You are cloudwaddie-agent, an autonomous bot made by CloudWaddie.
-
-              User's test request: $MANUAL_PROMPT
-
-              Repository: $REPO_NAME
-
-              This is a manual test run. Respond with a simple acknowledgment."
-            else
-              # Default test prompt
-              TEST_PROMPT="You are cloudwaddie-agent, an autonomous bot made by CloudWaddie.
-
-              This is a manual test run of the workflow in repository $REPO_NAME.
-
-              Please respond with: 'CloudWaddie Agent test successful! The workflow is working correctly.'"
-            fi
-            
-            stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$TEST_PROMPT"
-            exit 0
-          fi
-
           PROMPT=$(cat <<'PROMPT_EOF'
           You are cloudwaddie-agent, an autonomous bot made by CloudWaddie.
+          Your username is @cloudwaddie-agent, mentioned by @AUTHOR_PLACEHOLDER in REPO_PLACEHOLDER.
 
-          First, read full issue/PR context and comments. Then respond with a helpful comment.
-          Avoid making code changes unless explicitly requested.
-
-          Context:
-          - Repo: REPO_PLACEHOLDER
+          ## Context
+          - Title: TITLE_PLACEHOLDER
           - Type: TYPE_PLACEHOLDER
           - Number: #NUMBER_PLACEHOLDER
-          - Title: TITLE_PLACEHOLDER
-          - Comment author: AUTHOR_PLACEHOLDER
+          - Repository: REPO_PLACEHOLDER
+          - Default Branch: BRANCH_PLACEHOLDER
 
-          User comment:
+          ## User's Request
           COMMENT_PLACEHOLDER
 
-          Always comment back using gh issue comment or gh pr comment. Use heredoc for markdown.
+          ---
+
+          ## Instructions
+
+          1. **READ FULL CONVERSATION** - Execute commands to get complete context:
+             - **Issues**: `gh issue view NUMBER_PLACEHOLDER --comments`
+             - **PRs**: Use all three:
+               ```bash
+               gh pr view NUMBER_PLACEHOLDER --comments
+               gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/comments
+               gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/reviews
+               ```
+
+          2. **Respond with a helpful comment** using `gh issue comment NUMBER_PLACEHOLDER` or `gh pr comment NUMBER_PLACEHOLDER`
+             - Use heredoc format for proper markdown escaping
+             - Avoid making code changes unless explicitly requested
+
           PROMPT_EOF
           )
 
@@ -281,10 +247,26 @@ jobs:
           PROMPT="${PROMPT//TYPE_PLACEHOLDER/$CONTEXT_TYPE}"
           PROMPT="${PROMPT//NUMBER_PLACEHOLDER/$CONTEXT_NUMBER}"
           PROMPT="${PROMPT//TITLE_PLACEHOLDER/$CONTEXT_TITLE}"
+          PROMPT="${PROMPT//BRANCH_PLACEHOLDER/$DEFAULT_BRANCH}"
           PROMPT="${PROMPT//COMMENT_PLACEHOLDER/$USER_COMMENT}"
 
           stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$PROMPT"
 
+      # Push changes (as cloudwaddie-agent)
+      - name: Push changes
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add -A
+            git commit -m "chore: changes by cloudwaddie-agent" || true
+          fi
+
+          BRANCH=$(git branch --show-current)
+          if [[ "$BRANCH" != "main" && "$BRANCH" != "master" ]]; then
+            git push origin "$BRANCH" || true
+          fi
 
       - name: Update reaction and remove label
         if: always()
