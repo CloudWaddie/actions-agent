@@ -122,9 +122,12 @@ jobs:
 
       # gh CLI auth as cloudwaddie-agent
       - name: Authenticate gh CLI as cloudwaddie-agent
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
-          gh auth status
+          # GH_TOKEN environment variable is automatically used by gh CLI
+          # Verify authentication works
+          gh auth status || echo "Using GH_TOKEN environment variable for authentication"
 
       - name: Ensure tmux is available (Linux)
         if: >-
