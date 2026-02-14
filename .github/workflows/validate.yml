@@ -16,7 +16,7 @@ jobs:
         uses: ibiqlik/action-yamllint@v3
         with:
           format: github
-          fail_on_warning: true
+          strict: true
 
       - name: Check workflow files exist
         run: |
