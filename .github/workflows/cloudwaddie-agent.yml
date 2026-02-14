@@ -91,15 +91,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
 
-      # Build oh-my-opencode
       - name: Build oh-my-opencode
+        if: steps.account_age.outputs.skip_check == 'true' || steps.account_age.outputs.account_old_enough == 'true'
         working-directory: oh-my-opencode
         run: |
           bun install
           bun run build
 
-      # Install OpenCode + configure local plugin + auth in single step
       - name: Setup OpenCode with oh-my-opencode
+        if: steps.account_age.outputs.skip_check == 'true' || steps.account_age.outputs.account_old_enough == 'true'
         env:
           OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
         run: |
@@ -356,6 +356,49 @@ jobs:
             echo "comment_id=" >> $GITHUB_OUTPUT
           fi
 
+      - name: Check Account Age
+        id: account_age
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          AUTHOR: ${{ steps.context.outputs.author }}
+        run: |
+          if [[ "${{ steps.context.outputs.type }}" == "dispatch" ]]; then
+            echo "skip_check=true" >> $GITHUB_OUTPUT
+            echo "Account age check skipped for manual workflow dispatch"
+            exit 0
+          fi
+          
+          if [[ "$AUTHOR" == "cloudwaddie-agent" ]]; then
+            echo "skip_check=true" >> $GITHUB_OUTPUT
+            echo "Account age check skipped for bot itself"
+            exit 0
+          fi
+          
+          USER_DATA=$(gh api users/$AUTHOR)
+          CREATED_AT=$(echo "$USER_DATA" | jq -r '.created_at')
+          
+          if [[ "$CREATED_AT" == "null" || -z "$CREATED_AT" ]]; then
+            echo "skip_check=true" >> $GITHUB_OUTPUT
+            echo "Could not determine account creation date, allowing"
+            exit 0
+          fi
+          
+          CREATED_SECONDS=$(date -d "$CREATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$CREATED_AT" +%s 2>/dev/null)
+          NOW_SECONDS=$(date +%s)
+          AGE_DAYS=$(( (NOW_SECONDS - CREATED_SECONDS) / 86400 ))
+          
+          echo "User: $AUTHOR"
+          echo "Account created: $CREATED_AT"
+          echo "Account age: $AGE_DAYS days"
+          
+          if [[ $AGE_DAYS -ge 30 ]]; then
+            echo "account_old_enough=true" >> $GITHUB_OUTPUT
+            echo "Account is $AGE_DAYS days old (>= 30 days) - allowing"
+          else
+            echo "account_old_enough=false" >> $GITHUB_OUTPUT
+            echo "Account is only $AGE_DAYS days old (< 30 days) - rejecting"
+          fi
+
       # Add :eyes: reaction (as cloudwaddie-agent)
       - name: Add eyes reaction
         env:
@@ -393,6 +436,7 @@ jobs:
           fi
 
       - name: Run oh-my-opencode
+        if: steps.account_age.outputs.skip_check == 'true' || steps.account_age.outputs.account_old_enough == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           USER_COMMENT: ${{ steps.context.outputs.comment }}
@@ -404,6 +448,26 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           export PATH="$HOME/.opencode/bin:$PATH"
+
+      - name: Reject request from new account
+        if: steps.account_age.outputs.account_old_enough == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          AUTHOR="${{ steps.context.outputs.author }}"
+          NUMBER="${{ steps.context.outputs.number }}"
+          TYPE="${{ steps.context.outputs.type }}"
+          
+          REJECT_MESSAGE="@$AUTHOR Sorry, I can only respond to users with GitHub accounts older than 30 days. This helps prevent spam and abuse. Please try again once your account is older, or contact the repository maintainers directly."
+          
+          if [[ -n "$NUMBER" ]]; then
+            if [[ "$TYPE" == "pr" ]]; then
+              gh pr comment "$NUMBER" --body "$REJECT_MESSAGE"
+            else
+              gh issue comment "$NUMBER" --body "$REJECT_MESSAGE"
+            fi
+          fi
+          echo "Request rejected: Account too new"
 
           PROMPT=$(cat <<'PROMPT_EOF'
           [analyze-mode]

@@ -17,5 +17,6 @@ A GitHub **workflow template** that runs **cloudwaddie-agent** (an autonomous bo
 
 ## Notes
 - The workflow only runs on mentions by a **contributor** (OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR).
+- The workflow checks that user accounts are at least **30 days old** to prevent spam (manual workflow dispatch bypasses this check).
 - Uses **free OpenCode models** by default (opencode/big-pickle)
 - Authentication is optional - works with free models out of the box

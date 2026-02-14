@@ -157,6 +157,16 @@ Only users with the following permissions can trigger the bot:
 
 This prevents spam from random users.
 
+### Account Age Requirement
+
+The bot also checks that user accounts are at least **30 days old** before responding. This additional anti-spam measure helps prevent abuse from newly created accounts.
+
+- Users with accounts younger than 30 days will receive a polite rejection message
+- Manual workflow dispatch (via Actions tab) bypasses this check
+- The check is skipped if account creation date cannot be determined
+
+**Note**: This requirement can be customized by modifying the `AGE_DAYS -ge 30` condition in the workflow file.
+
 ## Managing Workflow Notifications
 
 ### Disabling Workflow Notification Emails
