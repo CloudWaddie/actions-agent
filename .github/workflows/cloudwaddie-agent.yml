@@ -89,6 +89,13 @@ jobs:
           # List available free opencode models (for visibility)
           opencode models
 
+          # Override plugin to use local source files (like sisyphus-agent does)
+          OPENCODE_JSON=~/.config/opencode/opencode.json
+          REPO_PATH=$(pwd)/oh-my-opencode
+          jq --arg path "file://$REPO_PATH/src/index.ts" '
+            .plugin = [.plugin[] | select(. != "oh-my-opencode")] + [$path]
+          ' "$OPENCODE_JSON" > /tmp/oc.json && mv /tmp/oc.json "$OPENCODE_JSON"
+
           # Configure OpenCode auth (if provided)
           if [[ -n "$OPENCODE_AUTH_JSON" ]]; then
             mkdir -p ~/.local/share/opencode
@@ -271,16 +278,7 @@ jobs:
           PROMPT="${PROMPT//TITLE_PLACEHOLDER/$CONTEXT_TITLE}"
           PROMPT="${PROMPT//COMMENT_PLACEHOLDER/$USER_COMMENT}"
 
-          # Run with safety timeout - oh-my-opencode sometimes hangs after completion
-          # Give it 30 minutes, which should be plenty for any reasonable task
-          timeout 1800 stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$PROMPT" || {
-            EXIT_CODE=$?
-            if [ $EXIT_CODE -eq 124 ]; then
-              echo "Process timed out after 30 minutes"
-              exit 1
-            fi
-            exit $EXIT_CODE
-          }
+          stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$PROMPT"
 
 
       - name: Update reaction and remove label
