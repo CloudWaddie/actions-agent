@@ -22,7 +22,15 @@ jobs:
       (github.event_name == 'issue_comment' &&
        contains(github.event.comment.body || '', '@cloudwaddie-agent') &&
        (github.event.comment.user.login || '') != 'cloudwaddie-agent' &&
-       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association || ''))
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.comment.author_association || '')) ||
+      (github.event_name == 'issues' &&
+       contains(github.event.issue.body || '', '@cloudwaddie-agent') &&
+       (github.event.issue.user.login || '') != 'cloudwaddie-agent' &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.issue.author_association || '')) ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.body || '', '@cloudwaddie-agent') &&
+       (github.event.pull_request.user.login || '') != 'cloudwaddie-agent' &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association || ''))
 
     permissions:
       contents: read
@@ -276,42 +284,90 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           EVENT_NAME: ${{ github.event_name }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          COMMENT_BODY: ${{ github.event.comment.body }}
-          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
-          COMMENT_ID_VAL: ${{ github.event.comment.id }}
           REPO: ${{ github.repository }}
         run: |
-          ISSUE_NUM="$ISSUE_NUMBER"
-          AUTHOR="$COMMENT_AUTHOR"
-          COMMENT_ID="$COMMENT_ID_VAL"
-
-          # Check if PR or Issue and get title
-          ISSUE_DATA=$(gh api "repos/$REPO/issues/${ISSUE_NUM}")
-          TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
-          if echo "$ISSUE_DATA" | jq -e '.pull_request' > /dev/null; then
-            echo "type=pr" >> $GITHUB_OUTPUT
+          if [[ "$EVENT_NAME" == "issue_comment" ]]; then
+            # Comment on issue or PR
+            ISSUE_NUM="${{ github.event.issue.number }}"
+            AUTHOR="${{ github.event.comment.user.login }}"
+            COMMENT_ID="${{ github.event.comment.id }}"
+            COMMENT_BODY="${{ github.event.comment.body }}"
+            
+            # Check if PR or Issue
+            ISSUE_DATA=$(gh api "repos/$REPO/issues/${ISSUE_NUM}")
+            TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
+            if echo "$ISSUE_DATA" | jq -e '.pull_request' > /dev/null; then
+              echo "type=pr" >> $GITHUB_OUTPUT
+            else
+              echo "type=issue" >> $GITHUB_OUTPUT
+            fi
             echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
-          else
+            echo "title=${TITLE}" >> $GITHUB_OUTPUT
+            echo "comment<<EOF" >> $GITHUB_OUTPUT
+            echo "$COMMENT_BODY" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "author=$AUTHOR" >> $GITHUB_OUTPUT
+            echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
+            
+          elif [[ "$EVENT_NAME" == "issues" ]]; then
+            # Issue opened/edited
+            ISSUE_NUM="${{ github.event.issue.number }}"
+            AUTHOR="${{ github.event.issue.user.login }}"
+            COMMENT_BODY="${{ github.event.issue.body }}"
+            TITLE="${{ github.event.issue.title }}"
+            
             echo "type=issue" >> $GITHUB_OUTPUT
             echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
+            echo "title=${TITLE}" >> $GITHUB_OUTPUT
+            echo "comment<<EOF" >> $GITHUB_OUTPUT
+            echo "$COMMENT_BODY" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "author=$AUTHOR" >> $GITHUB_OUTPUT
+            echo "comment_id=" >> $GITHUB_OUTPUT
+            
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            # PR opened/edited
+            PR_NUM="${{ github.event.pull_request.number }}"
+            AUTHOR="${{ github.event.pull_request.user.login }}"
+            COMMENT_BODY="${{ github.event.pull_request.body }}"
+            TITLE="${{ github.event.pull_request.title }}"
+            
+            echo "type=pr" >> $GITHUB_OUTPUT
+            echo "number=${PR_NUM}" >> $GITHUB_OUTPUT
+            echo "title=${TITLE}" >> $GITHUB_OUTPUT
+            echo "comment<<EOF" >> $GITHUB_OUTPUT
+            echo "$COMMENT_BODY" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "author=$AUTHOR" >> $GITHUB_OUTPUT
+            echo "comment_id=" >> $GITHUB_OUTPUT
+            
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            # Manual workflow trigger
+            PROMPT_INPUT="${{ github.event.inputs.prompt }}"
+            echo "type=dispatch" >> $GITHUB_OUTPUT
+            echo "number=" >> $GITHUB_OUTPUT
+            echo "title=Manual Workflow Run" >> $GITHUB_OUTPUT
+            echo "comment<<EOF" >> $GITHUB_OUTPUT
+            echo "$PROMPT_INPUT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "author=${{ github.actor }}" >> $GITHUB_OUTPUT
+            echo "comment_id=" >> $GITHUB_OUTPUT
           fi
-          echo "title=${TITLE}" >> $GITHUB_OUTPUT
-
-          echo "comment<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMENT_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "author=$AUTHOR" >> $GITHUB_OUTPUT
-          echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
 
       # Add :eyes: reaction (as cloudwaddie-agent)
       - name: Add eyes reaction
-        if: steps.context.outputs.comment_id != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
-            -X POST -f content="eyes" || true
+          if [[ -n "${{ steps.context.outputs.comment_id }}" ]]; then
+            # React to comment
+            gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
+              -X POST -f content="eyes" || true
+          elif [[ -n "${{ steps.context.outputs.number }}" ]]; then
+            # React to issue/PR itself
+            gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
+              -X POST -f content="eyes" || true
+          fi
 
       - name: Add working label
         if: steps.context.outputs.number != ''
