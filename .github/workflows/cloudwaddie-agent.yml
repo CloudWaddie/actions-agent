@@ -12,7 +12,8 @@ on:
 jobs:
   agent:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Skip if the comment author is the bot itself (prevent infinite loops)
+    if: github.event_name == 'workflow_dispatch' || github.event.comment.user.login != 'cloudwaddie-agent'
     env:
       GH_TOKEN: ${{ secrets.GH_PAT }}
 
