@@ -1,0 +1,27 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: YAML lint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          format: github
+          fail_on_warning: true
+
+      - name: Check workflow files exist
+        run: |
+          if [ ! -d ".github/workflows" ]; then
+            echo "Error: .github/workflows directory not found"
+            exit 1
+          fi
+          echo "Found $(ls -1 .github/workflows/*.yml 2>/dev/null | wc -l) workflow files"
