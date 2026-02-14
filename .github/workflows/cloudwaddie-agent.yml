@@ -209,7 +209,21 @@ jobs:
           export PATH="$HOME/.opencode/bin:$PATH"
 
           PROMPT=$(cat <<'PROMPT_EOF'
-          You are cloudwaddie-agent, an autonomous bot made by CloudWaddie.
+          [analyze-mode]
+          ANALYSIS MODE. Gather context before diving deep:
+
+          CONTEXT GATHERING (parallel):
+          - 1-2 explore agents (codebase patterns, implementations)
+          - 1-2 librarian agents (if external library involved)
+          - Direct tools: Grep, AST-grep, LSP for targeted searches
+
+          IF COMPLEX (architecture, multi-system, debugging after 2+ failures):
+          - Consult oracle for strategic guidance
+
+          SYNTHESIZE findings before proceeding.
+
+          ---
+
           Your username is @cloudwaddie-agent, mentioned by @AUTHOR_PLACEHOLDER in REPO_PLACEHOLDER.
 
           ## Context
@@ -224,21 +238,47 @@ jobs:
 
           ---
 
-          ## Instructions
+          ## CRITICAL: First Steps (MUST DO BEFORE ANYTHING ELSE)
 
-          1. **READ FULL CONVERSATION** - Execute commands to get complete context:
+          ### [CODE RED] MANDATORY CONTEXT READING - ZERO EXCEPTIONS
+
+          **YOU MUST READ ALL CONTENT. NOT SOME. NOT MOST. ALL.**
+
+          1. **READ FULL CONVERSATION** - Execute ALL commands below before ANY other action:
              - **Issues**: `gh issue view NUMBER_PLACEHOLDER --comments`
-             - **PRs**: Use all three:
+             - **PRs**: Use ALL THREE commands to get COMPLETE context:
                ```bash
                gh pr view NUMBER_PLACEHOLDER --comments
                gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/comments
                gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/reviews
                ```
+             
+             **WHAT TO EXTRACT FROM THE CONVERSATION:**
+             - The ORIGINAL issue/PR description (first message) - this is often the TRUE requirement
+             - ALL previous attempts and their outcomes
+             - ALL decisions made and their reasoning
+             - ALL feedback, criticism, and rejection reasons
+             - ANY linked issues, PRs, or external references
+             - The EXACT ask from the user who mentioned you
+             
+             **FAILURE TO READ EVERYTHING = GUARANTEED FAILURE**
+             You WILL make wrong assumptions. You WILL repeat past mistakes. You WILL miss critical context.
 
-          2. **Respond with a helpful comment** using `gh issue comment NUMBER_PLACEHOLDER` or `gh pr comment NUMBER_PLACEHOLDER`
-             - Use heredoc format for proper markdown escaping
-             - Avoid making code changes unless explicitly requested
+          2. **CREATE TODOS IMMEDIATELY**: Right after reading, create your todo list using todo tools.
+             - First todo: "Summarize issue/PR context and requirements"
+             - Break down ALL work into atomic, verifiable steps
+             - **GIT WORKFLOW (MANDATORY for implementation tasks)**: ALWAYS include these final todos:
+               - "Create new branch from origin/BRANCH_PLACEHOLDER (NEVER push directly to BRANCH_PLACEHOLDER)"
+               - "Commit changes"
+               - "Create PR to BRANCH_PLACEHOLDER branch"
+             - Plan everything BEFORE starting any work
 
+          ---
+
+
+          Plan everything using todo tools.
+          Then investigate and satisfy the request. Only if user requested to you to work explicitly, then use plan agent to plan, todo obsessively then create a PR to `BRANCH_PLACEHOLDER` branch.
+          When done, report the result to the issue/PR with `gh issue comment NUMBER_PLACEHOLDER` or `gh pr comment NUMBER_PLACEHOLDER`.
           PROMPT_EOF
           )
 
