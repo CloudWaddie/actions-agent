@@ -1,0 +1,13 @@
+# .yamllint configuration for GitHub Actions workflows
+
+# Disable document-start rule (no need for --- at start of YAML files)
+rules:
+  document-start: disable
+  
+  # Allow long lines (common in GitHub Actions with URLs/commands)
+  line-length:
+    max: 200
+    level: warning
+  
+  # Disable truthy rule (allows 'on' instead of only true/false)
+  truthy: disable
