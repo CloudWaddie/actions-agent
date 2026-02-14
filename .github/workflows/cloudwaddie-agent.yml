@@ -8,12 +8,19 @@ on:
         required: false
   issue_comment:
     types: [created]
+  issues:
+    types: [opened, edited]
+  pull_request:
+    types: [opened, edited]
 
 jobs:
   agent:
     runs-on: ubuntu-latest
-    # Skip if the comment author is the bot itself (prevent infinite loops)
-    if: github.event_name == 'workflow_dispatch' || github.event.comment.user.login != 'cloudwaddie-agent'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && github.event.comment.user.login != 'cloudwaddie-agent') ||
+      github.event_name == 'issues' ||
+      github.event_name == 'pull_request'
     env:
       GH_TOKEN: ${{ secrets.GH_PAT }}
 
@@ -51,20 +58,71 @@ jobs:
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Check user eligibility for issues/PRs
+        id: validation_issue_pr
+        if: github.event_name == 'issues' || github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [[ "$EVENT_NAME" == "issues" ]]; then
+            AUTHOR="${{ github.event.issue.user.login }}"
+          else
+            AUTHOR="${{ github.event.pull_request.user.login }}"
+          fi
+
+          AUTHOR_ASSOCIATION=$(gh api "repos/$REPO/issues/${{ github.event.issue.number || github.event.pull_request.number }}" --jq '.author_association')
+          
+          if [[ "$AUTHOR_ASSOCIATION" != "OWNER" ]] && \
+             [[ "$AUTHOR_ASSOCIATION" != "MEMBER" ]] && \
+             [[ "$AUTHOR_ASSOCIATION" != "COLLABORATOR" ]] && \
+             [[ "$AUTHOR_ASSOCIATION" != "CONTRIBUTOR" ]]; then
+            echo "User is not a contributor, skipping"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          USER_DATA=$(gh api "users/$AUTHOR")
+          CREATED_AT=$(echo "$USER_DATA" | jq -r '.created_at')
+          CREATED_DATE=$(date -d "$CREATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$CREATED_AT" +%s 2>/dev/null)
+          TODAY=$(date +%s)
+          DAYS_OLD=$(( (TODAY - CREATED_DATE) / 86400 ))
+
+          if [[ $DAYS_OLD -lt 30 ]]; then
+            echo "User account is only $DAYS_OLD days old (need 30+), skipping"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          else
+            echo "User account is $DAYS_OLD days old, proceeding"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v5
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         with:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
 
       - name: Configure Git as cloudwaddie-agent
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         run: |
           git config user.name "cloudwaddie-agent"
           git config user.email "cloudwaddie-agent@users.noreply.github.com"
 
       - name: Ensure tmux is available (Linux)
-        if: (github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true') && runner.os == 'Linux'
+        if: >-
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true'))
+          && runner.os == 'Linux'
         run: |
           set -euo pipefail
           if ! command -v tmux >/dev/null 2>&1; then
@@ -74,13 +132,21 @@ jobs:
           tmux -V
 
       - name: Setup Bun
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - name: Checkout oh-my-opencode dev branch
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         uses: actions/checkout@v5
         with:
           repository: code-yeongyu/oh-my-opencode
@@ -88,14 +154,22 @@ jobs:
           path: oh-my-opencode
 
       - name: Build oh-my-opencode from source
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         working-directory: oh-my-opencode
         run: |
           bun install
           bun run build
 
       - name: Setup OpenCode with oh-my-opencode
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         env:
           OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON || '' }}
         run: |
@@ -154,14 +228,23 @@ jobs:
 
       - name: Collect Context
         id: context
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           EVENT_NAME: ${{ github.event_name }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
           COMMENT_ID_VAL: ${{ github.event.comment.id }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
           REPO: ${{ github.repository }}
         run: |
           if [[ "$EVENT_NAME" == "issue_comment" ]]; then
@@ -179,24 +262,69 @@ jobs:
               echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
             fi
             echo "title=${TITLE}" >> $GITHUB_OUTPUT
+            echo "comment=${COMMENT_BODY}" >> $GITHUB_OUTPUT
+          elif [[ "$EVENT_NAME" == "issues" ]]; then
+            ISSUE_NUM="$ISSUE_NUMBER"
+            AUTHOR="${{ github.event.issue.user.login }}"
+            echo "type=issue" >> $GITHUB_OUTPUT
+            echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
+            echo "title=${ISSUE_TITLE}" >> $GITHUB_OUTPUT
+            COMMENT_BODY="[Issue opened/edited]: ${ISSUE_TITLE}"
+            if [[ -n "$ISSUE_BODY" ]]; then
+              COMMENT_BODY="${COMMENT_BODY}\n\n${ISSUE_BODY}"
+            fi
+            echo "comment=${COMMENT_BODY}" >> $GITHUB_OUTPUT
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            PR_NUM="$PR_NUMBER"
+            AUTHOR="${{ github.event.pull_request.user.login }}"
+            echo "type=pr" >> $GITHUB_OUTPUT
+            echo "number=${PR_NUM}" >> $GITHUB_OUTPUT
+            echo "title=${PR_TITLE}" >> $GITHUB_OUTPUT
+            COMMENT_BODY="[PR opened/edited]: ${PR_TITLE}"
+            if [[ -n "$PR_BODY" ]]; then
+              COMMENT_BODY="${COMMENT_BODY}\n\n${PR_BODY}"
+            fi
+            echo "comment=${COMMENT_BODY}" >> $GITHUB_OUTPUT
           fi
 
-          echo "comment<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMENT_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
           echo "author=$AUTHOR" >> $GITHUB_OUTPUT
-          echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
+          echo "comment_id=" >> $GITHUB_OUTPUT
 
       - name: Add eyes reaction
-        if: (github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true') && steps.context.outputs.comment_id != ''
+        if: >-
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true'))
+          && steps.context.outputs.comment_id != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
             -X POST -f content="eyes" || true
 
+      - name: Add reaction to issue/PR
+        if: >-
+          (github.event_name == 'issues' || github.event_name == 'pull_request') &&
+          (steps.validation_issue_pr.outputs.should_run == 'true')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
+            gh api "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions" \
+              -X POST -f content="eyes" || true
+          else
+            gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
+              -X POST -f content="eyes" || true
+          fi
+
       - name: Add working label
-        if: (github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true') && steps.context.outputs.number != ''
+        if: >-
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true'))
+          && steps.context.outputs.number != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
@@ -217,7 +345,11 @@ jobs:
           fi
 
       - name: Run cloudwaddie-agent (oh-my-opencode)
-        if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && steps.validation.outputs.should_run == 'true') ||
+          (github.event_name == 'issues' && steps.validation_issue_pr.outputs.should_run == 'true') ||
+          (github.event_name == 'pull_request' && steps.validation_issue_pr.outputs.should_run == 'true')
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           USER_COMMENT: ${{ steps.context.outputs.comment }}
@@ -300,6 +432,26 @@ jobs:
 
             gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
               -X POST -f content="+1" || true
+          fi
+
+          if [[ "${{ github.event_name }}" == "issues" ]] || [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
+              REACTION_ID=$(gh api "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions" \
+                --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' | head -1)
+              if [[ -n "$REACTION_ID" ]]; then
+                gh api -X DELETE "/repos/${{ github.repository }}/reactions/${REACTION_ID}" || true
+              fi
+              gh api "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions" \
+                -X POST -f content="+1" || true
+            else
+              REACTION_ID=$(gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
+                --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' | head -1)
+              if [[ -n "$REACTION_ID" ]]; then
+                gh api -X DELETE "/repos/${{ github.repository }}/reactions/${REACTION_ID}" || true
+              fi
+              gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
+                -X POST -f content="+1" || true
+            fi
           fi
 
           if [[ -n "${{ steps.context.outputs.number }}" ]]; then
