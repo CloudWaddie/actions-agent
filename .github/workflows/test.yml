@@ -1,0 +1,143 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: YAML lint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          format: github
+          strict: true
+
+      - name: Validate workflow files exist
+        run: |
+          if [ ! -d ".github/workflows" ]; then
+            echo "Error: .github/workflows directory not found"
+            exit 1
+          fi
+          WORKFLOW_COUNT=$(ls -1 .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null | wc -l)
+          echo "Found $WORKFLOW_COUNT workflow files"
+          if [ "$WORKFLOW_COUNT" -eq 0 ]; then
+            echo "Error: No workflow files found"
+            exit 1
+          fi
+
+      - name: Validate JSON files
+        run: |
+          echo "Validating JSON files..."
+          for file in $(find . -name "*.json" -type f 2>/dev/null); do
+            if ! jq empty "$file" 2>/dev/null; then
+              echo "Error: Invalid JSON in $file"
+              exit 1
+            fi
+          done
+          echo "All JSON files are valid"
+
+      - name: Validate workflow YAML structure
+        run: |
+          echo "Validating workflow YAML structure..."
+          for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
+            if [ -f "$workflow" ]; then
+              echo "Checking $workflow..."
+              if ! jq -r '.name' "$workflow" > /dev/null 2>&1; then
+                echo "Error: $workflow is not valid YAML"
+                exit 1
+              fi
+              if ! jq -e '.on' "$workflow" > /dev/null 2>&1; then
+                echo "Error: $workflow missing on key"
+                exit 1
+              fi
+              if ! jq -e '.jobs' "$workflow" > /dev/null 2>&1; then
+                echo "Error: $workflow missing jobs key"
+                exit 1
+              fi
+              JOBS=$(jq -r '.jobs | keys[]' "$workflow")
+              for job in $JOBS; do
+                if ! jq -e ".jobs[\"$job\"].runs-on" "$workflow" > /dev/null 2>&1; then
+                  echo "Error: Job $job missing runs-on"
+                  exit 1
+                fi
+                if ! jq -e ".jobs[\"$job\"].steps" "$workflow" > /dev/null 2>&1; then
+                  echo "Error: Job $job missing steps"
+                  exit 1
+                fi
+              done
+              echo "$workflow is valid"
+            fi
+          done
+          echo "All workflow files have valid structure"
+
+      - name: Check workflow actions are pinned
+        run: |
+          echo "Checking workflow actions are pinned to versions..."
+          for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
+            if [ -f "$workflow" ]; then
+              UNPINNED=$(grep -E "uses:" "$workflow" | grep -v "@" | grep -v "uses: \.\/" | grep -v "uses: @" || true)
+              if [ -n "$UNPINNED" ]; then
+                echo "Warning: Found unpinned actions in $workflow"
+                echo "$UNPINNED"
+              fi
+            fi
+          done
+
+      - name: Validate GitHub token permissions in workflows
+        run: |
+          echo "Checking workflow permissions..."
+          for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
+            if [ -f "$workflow" ]; then
+              WORKFLOW_NAME=$(jq -r '.name' "$workflow")
+              echo "Checking $WORKFLOW_NAME..."
+              if jq -e '.permissions' "$workflow" > /dev/null 2>&1; then
+                PERMS=$(jq -r '.permissions' "$workflow")
+                echo "Permissions defined: $PERMS"
+              else
+                echo "Warning: No explicit permissions defined"
+              fi
+            fi
+          done
+
+      - name: Check required files exist
+        run: |
+          echo "Checking required template files..."
+          for file in README.md template.json .github/workflows/cloudwaddie-agent.yml; do
+            if [ ! -f "$file" ]; then
+              echo "Error: Required file $file not found"
+              exit 1
+            fi
+            echo "Found: $file"
+          done
+          echo "All required files present"
+
+      - name: Validate template.json
+        run: |
+          echo "Validating template.json..."
+          if [ -f "template.json" ]; then
+            if ! jq -e '.name' template.json > /dev/null 2>&1; then
+              echo "Error: template.json missing name"
+              exit 1
+            fi
+            if ! jq -e '.description' template.json > /dev/null 2>&1; then
+              echo "Error: template.json missing description"
+              exit 1
+            fi
+            if ! jq -e '.categories' template.json > /dev/null 2>&1; then
+              echo "Error: template.json missing categories"
+              exit 1
+            fi
+            if ! jq -e '.categories | type == "array"' template.json > /dev/null 2>&1; then
+              echo "Error: template.json categories must be an array"
+              exit 1
+            fi
+            echo "template.json is valid"
+          else
+            echo "Warning: template.json not found"
+          fi
