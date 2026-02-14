@@ -380,14 +380,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
-          
-          # Debug: Check which token is being used and verify scopes
-          echo "=== Token Authentication Debug ==="
-          gh auth status
-          echo "=== Checking token scopes ==="
-          gh api /user -i 2>&1 | grep -i "x-oauth-scopes" || echo "Could not retrieve scopes"
-          echo "================================"
-          
           gh label create "cloudwaddie-agent: working" \
             --repo "${{ github.repository }}" \
             --color "fcf2e1" \
