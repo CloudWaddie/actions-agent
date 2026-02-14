@@ -9,6 +9,10 @@ on:
   issue_comment:
     types: [created]
 
+concurrency:
+  group: cloudwaddie-agent-${{ github.repository }}-${{ github.event.issue.number || github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   agent:
     runs-on: ubuntu-latest
@@ -218,6 +222,7 @@ jobs:
 
       - name: Run cloudwaddie-agent (oh-my-opencode)
         if: github.event_name == 'workflow_dispatch' || steps.validation.outputs.should_run == 'true'
+        timeout-minutes: 20
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           USER_COMMENT: ${{ steps.context.outputs.comment }}
@@ -230,7 +235,24 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           MANUAL_PROMPT: ${{ github.event.inputs.prompt }}
         run: |
+          set -euo pipefail
           export PATH="$HOME/.opencode/bin:$PATH"
+
+          run_agent_with_timeout() {
+            local prompt="$1"
+            # Hard timeout prevents indefinite hangs.
+            timeout --signal=TERM --kill-after=30s 15m \
+              stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$prompt"
+          }
+
+          cleanup_children() {
+            # Best-effort cleanup to avoid orphaned processes after timeout/cancel.
+            pkill -TERM -P $$ >/dev/null 2>&1 || true
+            sleep 2
+            pkill -KILL -P $$ >/dev/null 2>&1 || true
+          }
+
+          trap cleanup_children EXIT
 
           # Handle workflow_dispatch (manual testing) differently
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
@@ -251,8 +273,8 @@ jobs:
 
               Please respond with: 'CloudWaddie Agent test successful! The workflow is working correctly.'"
             fi
-            
-            stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$TEST_PROMPT"
+
+            run_agent_with_timeout "$TEST_PROMPT"
             exit 0
           fi
 
@@ -283,7 +305,7 @@ jobs:
           PROMPT="${PROMPT//TITLE_PLACEHOLDER/$CONTEXT_TITLE}"
           PROMPT="${PROMPT//COMMENT_PLACEHOLDER/$USER_COMMENT}"
 
-          stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$PROMPT"
+          run_agent_with_timeout "$PROMPT"
 
 
       - name: Update reaction and remove label
