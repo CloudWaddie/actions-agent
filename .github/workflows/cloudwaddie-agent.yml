@@ -93,11 +93,12 @@ jobs:
       - name: Get OpenCode latest version
         id: opencode-version
         run: |
-          VERSION=$(curl -s https://opencode.ai/api/version 2>/dev/null || echo "")
-          if [[ -z "$VERSION" ]]; then
-            VERSION="latest-$(date +%Y%m%d)"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          # Fetch version with validation
+          VERSION=$(curl -s https://opencode.ai/api/version 2>/dev/null | head -n 1 | tr -cd '[:alnum:].-')
+      
+          # Validate: ensure it looks like a version string (not HTML/CSS)
+          if [[ ! "$VERSION" =~ ^[a-zA-Z0-9._-]+$ ]] || [[ -z "$VERSION" ]]; then
+            VERSION
 
       - name: Cache OpenCode CLI
         uses: actions/cache@v5
