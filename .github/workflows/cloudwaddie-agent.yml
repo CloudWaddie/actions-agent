@@ -33,9 +33,7 @@ jobs:
        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association || ''))
 
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: read
 
     steps:
       # Checkout with cloudwaddie-agent's PAT
@@ -374,28 +372,6 @@ jobs:
               -X POST -f content="eyes" || true
           fi
 
-      - name: Add working label
-        if: steps.context.outputs.number != ''
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
-          gh label create "cloudwaddie-agent: working" \
-            --repo "${{ github.repository }}" \
-            --color "fcf2e1" \
-            --description "CloudWaddie-agent is currently working on this" \
-            --force || true
-          
-          if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
-            gh pr edit "${{ steps.context.outputs.number }}" \
-              --repo "${{ github.repository }}" \
-              --add-label "cloudwaddie-agent: working" || true
-          else
-            gh issue edit "${{ steps.context.outputs.number }}" \
-              --repo "${{ github.repository }}" \
-              --add-label "cloudwaddie-agent: working" || true
-          fi
-
       - name: Run oh-my-opencode
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -439,11 +415,22 @@ jobs:
           ## User's Request
           COMMENT_PLACEHOLDER
 
-          ---
+           ---
 
-          ## CRITICAL: First Steps (MUST DO BEFORE ANYTHING ELSE)
+           ## CRITICAL: First Steps (MUST DO BEFORE ANYTHING ELSE)
 
-          ### [CODE RED] MANDATORY CONTEXT READING - ZERO EXCEPTIONS
+           ### [CODE RED] MANDATORY OUTPUT REQUIREMENT
+
+           **YOU MUST POST AT LEAST ONE COMMENT. SILENT COMPLETION = FAILURE.**
+
+           - Every task MUST result in at least one comment via `gh issue comment` or `gh pr comment`
+           - Explain what you found, what you did, or why you couldn't complete the task
+           - NEVER finish without posting a comment - the user cannot see console output
+           - If you have nothing to report, comment to acknowledge you saw the request and explain why no action was needed
+
+           ---
+
+           ### [CODE RED] MANDATORY CONTEXT READING - ZERO EXCEPTIONS
 
           **YOU MUST READ ALL CONTENT. NOT SOME. NOT MOST. ALL.**
 
@@ -467,27 +454,28 @@ jobs:
               **FAILURE TO READ EVERYTHING = GUARANTEED FAILURE**
               You WILL make wrong assumptions. You WILL repeat past mistakes. You WILL miss critical context.
 
-           2. **CREATE TODOS IMMEDIATELY**: Right after reading, create your todo list using todo tools.
-              - First todo: "Summarize issue/PR context and requirements"
-              - Break down ALL work into atomic, verifiable steps
-              - **GIT WORKFLOW (MANDATORY for implementation tasks)**: ALWAYS include these final todos:
-                
-                **YOU ARE AN EXTERNAL CONTRIBUTOR** - You don't have write access to the repository.
-                **USE FORK WORKFLOW**:
-                - "Fork repository to cloudwaddie-agent account (check if fork exists first: `gh repo view cloudwaddie-agent/REPO_NAME`, create if needed: `gh repo fork --remote=false`)"
-                - "Create new feature branch (NEVER work on BRANCH_PLACEHOLDER directly)"
-                - "Commit changes with clear, atomic commits"
-                - "Push to YOUR FORK: `git push https://github.com/cloudwaddie-agent/REPO_NAME BRANCH_NAME`"
-                - "Create PR from fork to upstream: `gh pr create --repo OWNER/REPO --head cloudwaddie-agent:BRANCH_NAME --base BRANCH_PLACEHOLDER`"
-                
-                **CRITICAL**: You cannot push directly to OWNER/REPO. You MUST push to cloudwaddie-agent/REPO (your fork).
-              - Plan everything BEFORE starting any work
+            2. **CREATE TODOS IMMEDIATELY**: Right after reading, create your todo list using todo tools.
+               - First todo: "Summarize issue/PR context and requirements"
+               - Break down ALL work into atomic, verifiable steps
+               - **GIT WORKFLOW (MANDATORY for implementation tasks)**: ALWAYS include these final todos:
+                 
+                 **YOU HAVE READ-ONLY WORKFLOW PERMISSIONS** - Cannot push directly to this repository.
+                 **ALL GIT OPERATIONS MUST USE GH CLI WITH PAT TOKEN**:
+                 - When creating commits: Use `git` commands as normal (PAT provides auth)
+                 - When pushing: Use `git push` (PAT token provides write access via credentials)
+                 - When creating PRs: Use `gh pr create` (authenticates via GH_TOKEN env var)
+                 
+                 **CRITICAL**: The workflow has `contents: read` permissions for security. All write operations happen through your PAT token (`GH_TOKEN` env var), not the workflow token.
+               - Plan everything BEFORE starting any work
 
-          ---
+           ---
 
-          Plan everything using todo tools.
-          Then investigate and satisfy the request. Only if user requested to you to work explicitly, then use plan agent to plan, todo obsessively then create a PR to `BRANCH_PLACEHOLDER` branch.
-          When done, report the result to the issue/PR with `gh issue comment NUMBER_PLACEHOLDER` or `gh pr comment NUMBER_PLACEHOLDER`.
+           Plan everything using todo tools.
+           Then investigate and satisfy the request. Only if user requested to you to work explicitly, then use plan agent to plan, todo obsessively then create a PR to `BRANCH_PLACEHOLDER` branch.
+           
+           **CRITICAL - ALWAYS COMMENT**: When done, YOU MUST report the result to the issue/PR with
+           `gh issue comment NUMBER_PLACEHOLDER` or `gh pr comment NUMBER_PLACEHOLDER`.
+           Silent completion is NOT acceptable.
           PROMPT_EOF
           )
 
@@ -501,31 +489,7 @@ jobs:
 
           stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$PROMPT"
 
-      # Push changes (as cloudwaddie-agent)
-      - name: Push changes
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
-          
-          BRANCH=$(git branch --show-current)
-          
-          # NEVER push to main/master branches
-          if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
-            echo "❌ ERROR: Attempted to push to protected branch '$BRANCH'"
-            echo "The agent should create a feature branch and PR instead"
-            exit 0  # Exit gracefully without failing workflow
-          fi
-          
-          # Only commit and push if there are changes
-          if [[ -n "$(git status --porcelain)" ]]; then
-            git add -A
-            git commit -m "chore: changes by cloudwaddie-agent" || true
-            git push origin "$BRANCH" || true
-          fi
-
-      - name: Update reaction and remove label
+      - name: Update reaction
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -562,14 +526,3 @@ jobs:
             fi
           fi
 
-          if [[ -n "${{ steps.context.outputs.number }}" ]]; then
-            if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
-              gh pr edit "${{ steps.context.outputs.number }}" \
-                --repo "${{ github.repository }}" \
-                --remove-label "cloudwaddie-agent: working" || true
-            else
-              gh issue edit "${{ steps.context.outputs.number }}" \
-                --repo "${{ github.repository }}" \
-                --remove-label "cloudwaddie-agent: working" || true
-            fi
-          fi
