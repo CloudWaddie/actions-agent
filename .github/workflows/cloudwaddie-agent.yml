@@ -291,11 +291,11 @@ jobs:
             ISSUE_NUM="${{ github.event.issue.number }}"
             AUTHOR="${{ github.event.comment.user.login }}"
             COMMENT_ID="${{ github.event.comment.id }}"
-            COMMENT_BODY="${{ github.event.comment.body }}"
             
             # Check if PR or Issue
             ISSUE_DATA=$(gh api "repos/$REPO/issues/${ISSUE_NUM}")
             TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
+            
             if echo "$ISSUE_DATA" | jq -e '.pull_request' > /dev/null; then
               echo "type=pr" >> $GITHUB_OUTPUT
             else
@@ -303,9 +303,6 @@ jobs:
             fi
             echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
             echo "title=${TITLE}" >> $GITHUB_OUTPUT
-            echo "comment<<EOF" >> $GITHUB_OUTPUT
-            echo "$COMMENT_BODY" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
             echo "author=$AUTHOR" >> $GITHUB_OUTPUT
             echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
             
@@ -315,15 +312,9 @@ jobs:
             AUTHOR="${{ github.event.issue.user.login }}"
             TITLE="${{ github.event.issue.title }}"
             
-            # Use gh api to fetch body reliably (handles multiline, special chars)
-            COMMENT_BODY=$(gh api "repos/$REPO/issues/${ISSUE_NUM}" --jq '.body // ""')
-            
             echo "type=issue" >> $GITHUB_OUTPUT
             echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
             echo "title=${TITLE}" >> $GITHUB_OUTPUT
-            echo "comment<<EOF" >> $GITHUB_OUTPUT
-            echo "$COMMENT_BODY" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
             echo "author=$AUTHOR" >> $GITHUB_OUTPUT
             echo "comment_id=" >> $GITHUB_OUTPUT
             
@@ -333,27 +324,17 @@ jobs:
             AUTHOR="${{ github.event.pull_request.user.login }}"
             TITLE="${{ github.event.pull_request.title }}"
             
-            # Use gh api to fetch body reliably (handles multiline, special chars)
-            COMMENT_BODY=$(gh api "repos/$REPO/pulls/${PR_NUM}" --jq '.body // ""')
-            
             echo "type=pr" >> $GITHUB_OUTPUT
             echo "number=${PR_NUM}" >> $GITHUB_OUTPUT
             echo "title=${TITLE}" >> $GITHUB_OUTPUT
-            echo "comment<<EOF" >> $GITHUB_OUTPUT
-            echo "$COMMENT_BODY" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
             echo "author=$AUTHOR" >> $GITHUB_OUTPUT
             echo "comment_id=" >> $GITHUB_OUTPUT
             
           elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             # Manual workflow trigger
-            PROMPT_INPUT="${{ github.event.inputs.prompt }}"
             echo "type=dispatch" >> $GITHUB_OUTPUT
             echo "number=" >> $GITHUB_OUTPUT
             echo "title=Manual Workflow Run" >> $GITHUB_OUTPUT
-            echo "comment<<EOF" >> $GITHUB_OUTPUT
-            echo "$PROMPT_INPUT" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
             echo "author=${{ github.actor }}" >> $GITHUB_OUTPUT
             echo "comment_id=" >> $GITHUB_OUTPUT
           fi
@@ -376,7 +357,6 @@ jobs:
       - name: Run oh-my-opencode
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
-          USER_COMMENT: ${{ steps.context.outputs.comment }}
           COMMENT_AUTHOR: ${{ steps.context.outputs.author }}
           CONTEXT_TYPE: ${{ steps.context.outputs.type }}
           CONTEXT_NUMBER: ${{ steps.context.outputs.number }}
@@ -412,70 +392,87 @@ jobs:
           - Repository: REPO_PLACEHOLDER
           - Default Branch: BRANCH_PLACEHOLDER
 
-          ## User's Request
-          COMMENT_PLACEHOLDER
+          ---
 
-           ---
+          ## CRITICAL: First Steps (MUST DO BEFORE ANYTHING ELSE)
 
-           ## CRITICAL: First Steps (MUST DO BEFORE ANYTHING ELSE)
+          ### [CODE RED] MANDATORY OUTPUT REQUIREMENT
 
-           ### [CODE RED] MANDATORY OUTPUT REQUIREMENT
+          **YOU MUST POST AT LEAST ONE COMMENT. SILENT COMPLETION = FAILURE.**
 
-           **YOU MUST POST AT LEAST ONE COMMENT. SILENT COMPLETION = FAILURE.**
+          - Every task MUST result in at least one comment via `gh issue comment` or `gh pr comment`
+          - Explain what you found, what you did, or why you couldn't complete the task
+          - NEVER finish without posting a comment - the user cannot see console output
+          - If you have nothing to report, comment to acknowledge you saw the request and explain why no action was needed
 
-           - Every task MUST result in at least one comment via `gh issue comment` or `gh pr comment`
-           - Explain what you found, what you did, or why you couldn't complete the task
-           - NEVER finish without posting a comment - the user cannot see console output
-           - If you have nothing to report, comment to acknowledge you saw the request and explain why no action was needed
+          ---
 
-           ---
+          ### [CODE RED] MANDATORY CONTEXT READING - ZERO EXCEPTIONS
 
-           ### [CODE RED] MANDATORY CONTEXT READING - ZERO EXCEPTIONS
+          **YOU MUST READ FULL CONVERSATION HISTORY. NO SHORTCUTS.**
 
-          **YOU MUST READ ALL CONTENT. NOT SOME. NOT MOST. ALL.**
+          The workflow provides basic metadata above, but you MUST fetch the complete conversation:
 
-           1. **READ FULL CONVERSATION** - Execute ALL commands below before ANY other action:
-              - **Issues**: `gh issue view NUMBER_PLACEHOLDER --comments`
-              - **PRs**: Use ALL THREE commands to get COMPLETE context:
-                ```bash
-                gh pr view NUMBER_PLACEHOLDER --comments
-                gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/comments
-                gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/reviews
-                ```
-              
-              **WHAT TO EXTRACT FROM THE CONVERSATION:**
-              - The ORIGINAL issue/PR description (first message) - this is often the TRUE requirement
-              - ALL previous attempts and their outcomes
-              - ALL decisions made and their reasoning
-              - ALL feedback, criticism, and rejection reasons
-              - ANY linked issues, PRs, or external references
-              - The EXACT ask from the user who mentioned you
-              
-              **FAILURE TO READ EVERYTHING = GUARANTEED FAILURE**
-              You WILL make wrong assumptions. You WILL repeat past mistakes. You WILL miss critical context.
+          **For Issues** - Run this command FIRST:
+          ```bash
+          gh issue view NUMBER_PLACEHOLDER --comments
+          ```
 
-            2. **CREATE TODOS IMMEDIATELY**: Right after reading, create your todo list using todo tools.
-               - First todo: "Summarize issue/PR context and requirements"
-               - Break down ALL work into atomic, verifiable steps
-               - **GIT WORKFLOW (MANDATORY for implementation tasks)**: ALWAYS include these final todos:
-                 
-                 **YOU HAVE READ-ONLY WORKFLOW PERMISSIONS** - Cannot push directly to this repository.
-                 **ALL GIT OPERATIONS MUST USE GH CLI WITH PAT TOKEN**:
-                 - When creating commits: Use `git` commands as normal (PAT provides auth)
-                 - When pushing: Use `git push` (PAT token provides write access via credentials)
-                 - When creating PRs: Use `gh pr create` (authenticates via GH_TOKEN env var)
-                 
-                 **CRITICAL**: The workflow has `contents: read` permissions for security. All write operations happen through your PAT token (`GH_TOKEN` env var), not the workflow token.
-               - Plan everything BEFORE starting any work
+          **For PRs** - Run ALL THREE commands FIRST:
+          ```bash
+          gh pr view NUMBER_PLACEHOLDER --comments
+          gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/comments
+          gh api repos/REPO_PLACEHOLDER/pulls/NUMBER_PLACEHOLDER/reviews
+          ```
 
-           ---
+          **WHAT TO EXTRACT:**
+          1. **Original issue/PR body** - The initial description (TRUE requirement)
+          2. **ALL comments** - Additional context, clarifications, feedback
+          3. **Previous attempts** - What was tried before, what failed, why
+          4. **Decisions & reasoning** - Choices made in the conversation
+          5. **Linked references** - Related issues, PRs, external links
+          6. **The specific request** - What the person who mentioned you wants
 
-           Plan everything using todo tools.
-           Then investigate and satisfy the request. Only if user requested to you to work explicitly, then use plan agent to plan, todo obsessively then create a PR to `BRANCH_PLACEHOLDER` branch.
-           
-           **CRITICAL - ALWAYS COMMENT**: When done, YOU MUST report the result to the issue/PR with
-           `gh issue comment NUMBER_PLACEHOLDER` or `gh pr comment NUMBER_PLACEHOLDER`.
-           Silent completion is NOT acceptable.
+          **WHY THIS IS CRITICAL:**
+          - The workflow only passes basic metadata (title, number, type)
+          - You need the FULL conversation to understand context
+          - Previous comments may contain critical information
+          - The person who mentioned you might be replying to earlier discussion
+
+          **FAILURE TO READ = GUARANTEED WRONG ANSWER**
+          You WILL miss requirements. You WILL repeat mistakes. You WILL waste everyone's time.
+
+          ---
+
+          ### Step 2: CREATE TODOS IMMEDIATELY
+
+          After reading the full conversation, create your todo list using todo tools:
+
+          1. **First todo**: "Summarize issue/PR context and requirements"
+          2. **Break down work** into atomic, verifiable steps
+          3. **GIT WORKFLOW** (for implementation tasks):
+             
+             **YOU HAVE READ-ONLY WORKFLOW PERMISSIONS** - Cannot push directly to this repository.
+             **ALL GIT OPERATIONS MUST USE GH CLI WITH PAT TOKEN**:
+             - When creating commits: Use `git` commands as normal (PAT provides auth)
+             - When pushing: Use `git push` (PAT token provides write access via credentials)
+             - When creating PRs: Use `gh pr create` (authenticates via GH_TOKEN env var)
+             
+             **CRITICAL**: The workflow has `contents: read` permissions for security. All write operations happen through your PAT token (`GH_TOKEN` env var), not the workflow token.
+
+          4. **Plan everything BEFORE starting** any work
+
+          ---
+
+          ## Workflow
+
+          1. **READ** full conversation with `gh` commands above
+          2. **CREATE TODOS** to plan all work
+          3. **INVESTIGATE** and satisfy the request
+          4. **IF implementation requested**: Use plan agent, create todos, make PR to `BRANCH_PLACEHOLDER` branch
+          5. **ALWAYS COMMENT**: Report results with `gh issue comment NUMBER_PLACEHOLDER` or `gh pr comment NUMBER_PLACEHOLDER`
+
+          Silent completion is NOT acceptable. You MUST comment.
           PROMPT_EOF
           )
 
@@ -485,7 +482,6 @@ jobs:
           PROMPT="${PROMPT//NUMBER_PLACEHOLDER/$CONTEXT_NUMBER}"
           PROMPT="${PROMPT//TITLE_PLACEHOLDER/$CONTEXT_TITLE}"
           PROMPT="${PROMPT//BRANCH_PLACEHOLDER/$DEFAULT_BRANCH}"
-          PROMPT="${PROMPT//COMMENT_PLACEHOLDER/$USER_COMMENT}"
 
           stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$PROMPT"
 
