@@ -13,6 +13,23 @@ jobs:
       contents: write
     
     steps:
+      - name: Check GH_PAT secret
+        run: |
+          if [ -z "${{ secrets.GH_PAT }}" ]; then
+            echo "ERROR: GH_PAT secret is not set!"
+            exit 1
+          else
+            echo "GH_PAT secret is set"
+          fi
+
+      - name: Verify authentication
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          echo "=== Verifying GitHub Authentication ==="
+          gh auth status
+          echo "========================================"
+          
       - name: Cleanup fork branch after PR merge
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -45,9 +62,18 @@ jobs:
             
             if [ $EXIT_CODE -eq 0 ]; then
               echo "Successfully deleted branch: $BRANCH_NAME"
-            elif [ $EXIT_CODE -eq 4 ] || echo "$RESPONSE" | grep -q "Not Found"; then
-              # Exit code 4 from gh api typically means "Not Found" (404)
+            elif echo "$RESPONSE" | grep -q "Not Found" || echo "$RESPONSE" | grep -q "404"; then
+              # Branch doesn't exist - that's OK
               echo "Branch already deleted or does not exist (404)"
+            elif echo "$RESPONSE" | grep -qi "authentication\|GH_TOKEN\|credential"; then
+              # Authentication error - this is a real problem
+              echo "ERROR: Authentication failed. Please check GH_PAT secret."
+              echo "Error: $RESPONSE"
+              exit 1
+            elif [ $EXIT_CODE -eq 4 ]; then
+              # Exit code 4 could be various errors - check if it's something we can ignore
+              echo "Warning: gh api returned exit code 4. Response: $RESPONSE"
+              # Don't treat as success, but don't fail either
             else
               echo "Failed to delete branch. Exit code: $EXIT_CODE"
               echo "Error: $RESPONSE"
