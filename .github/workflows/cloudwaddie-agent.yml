@@ -285,12 +285,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           EVENT_NAME: ${{ github.event_name }}
           REPO: ${{ github.repository }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          COMMENT_ID_VAL: ${{ github.event.comment.id }}
         run: |
           if [[ "$EVENT_NAME" == "issue_comment" ]]; then
             # Comment on issue or PR
             ISSUE_NUM="${{ github.event.issue.number }}"
-            AUTHOR="${{ github.event.comment.user.login }}"
-            COMMENT_ID="${{ github.event.comment.id }}"
+            AUTHOR="$COMMENT_AUTHOR"
+            COMMENT_ID="$COMMENT_ID_VAL"
+            USER_COMMENT="$COMMENT_BODY"
             
             # Check if PR or Issue
             ISSUE_DATA=$(gh api "repos/$REPO/issues/${ISSUE_NUM}")
@@ -303,6 +307,9 @@ jobs:
             fi
             echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
             echo "title=${TITLE}" >> $GITHUB_OUTPUT
+            echo "comment<<EOF" >> $GITHUB_OUTPUT
+            echo "$USER_COMMENT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
             echo "author=$AUTHOR" >> $GITHUB_OUTPUT
             echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
             
@@ -312,9 +319,15 @@ jobs:
             AUTHOR="${{ github.event.issue.user.login }}"
             TITLE="${{ github.event.issue.title }}"
             
+            # Use gh api to fetch body reliably (handles multiline, special chars)
+            USER_COMMENT=$(gh api "repos/$REPO/issues/${ISSUE_NUM}" --jq '.body // ""')
+            
             echo "type=issue" >> $GITHUB_OUTPUT
             echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
             echo "title=${TITLE}" >> $GITHUB_OUTPUT
+            echo "comment<<EOF" >> $GITHUB_OUTPUT
+            echo "$USER_COMMENT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
             echo "author=$AUTHOR" >> $GITHUB_OUTPUT
             echo "comment_id=" >> $GITHUB_OUTPUT
             
@@ -324,9 +337,15 @@ jobs:
             AUTHOR="${{ github.event.pull_request.user.login }}"
             TITLE="${{ github.event.pull_request.title }}"
             
+            # Use gh api to fetch body reliably (handles multiline, special chars)
+            USER_COMMENT=$(gh api "repos/$REPO/pulls/${PR_NUM}" --jq '.body // ""')
+            
             echo "type=pr" >> $GITHUB_OUTPUT
             echo "number=${PR_NUM}" >> $GITHUB_OUTPUT
             echo "title=${TITLE}" >> $GITHUB_OUTPUT
+            echo "comment<<EOF" >> $GITHUB_OUTPUT
+            echo "$USER_COMMENT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
             echo "author=$AUTHOR" >> $GITHUB_OUTPUT
             echo "comment_id=" >> $GITHUB_OUTPUT
             
@@ -337,6 +356,8 @@ jobs:
             echo "title=Manual Workflow Run" >> $GITHUB_OUTPUT
             echo "author=${{ github.actor }}" >> $GITHUB_OUTPUT
             echo "comment_id=" >> $GITHUB_OUTPUT
+            echo "comment<<EOF" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
           fi
 
       # Add :eyes: reaction (as cloudwaddie-agent)
@@ -357,6 +378,7 @@ jobs:
       - name: Run oh-my-opencode
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          USER_COMMENT: ${{ steps.context.outputs.comment }}
           COMMENT_AUTHOR: ${{ steps.context.outputs.author }}
           CONTEXT_TYPE: ${{ steps.context.outputs.type }}
           CONTEXT_NUMBER: ${{ steps.context.outputs.number }}
@@ -391,6 +413,9 @@ jobs:
           - Number: #NUMBER_PLACEHOLDER
           - Repository: REPO_PLACEHOLDER
           - Default Branch: BRANCH_PLACEHOLDER
+
+          ## User's Request
+          COMMENT_PLACEHOLDER
 
           ---
 
@@ -484,6 +509,7 @@ jobs:
           echo "  CONTEXT_TYPE=${CONTEXT_TYPE}"
           echo "  CONTEXT_TITLE=${CONTEXT_TITLE}"
           echo "  DEFAULT_BRANCH=${DEFAULT_BRANCH}"
+          echo "  USER_COMMENT length=${#USER_COMMENT}"
           
           # Debug: Show prompt before substitution
           echo "DEBUG: Prompt has $(echo "$PROMPT" | grep -c PLACEHOLDER) placeholders before substitution"
@@ -494,6 +520,7 @@ jobs:
           PROMPT="${PROMPT//NUMBER_PLACEHOLDER/$CONTEXT_NUMBER}"
           PROMPT="${PROMPT//TITLE_PLACEHOLDER/$CONTEXT_TITLE}"
           PROMPT="${PROMPT//BRANCH_PLACEHOLDER/$DEFAULT_BRANCH}"
+          PROMPT="${PROMPT//COMMENT_PLACEHOLDER/$USER_COMMENT}"
           
           # Debug: Show prompt after substitution
           echo "DEBUG: Prompt has $(echo "$PROMPT" | grep -c PLACEHOLDER) placeholders after substitution"
