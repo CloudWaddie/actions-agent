@@ -473,7 +473,9 @@ jobs:
            Plan everything using todo tools.
            Then investigate and satisfy the request. Only if user requested to you to work explicitly, then use plan agent to plan, todo obsessively then create a PR to `BRANCH_PLACEHOLDER` branch.
            
-           **CRITICAL - ALWAYS COMMENT**: When done, YOU MUST report the result to the issue/PR with `gh issue comment NUMBER_PLACEHOLDER` or `gh pr comment NUMBER_PLACEHOLDER`. Silent completion is NOT acceptable.
+           **CRITICAL - ALWAYS COMMENT**: When done, YOU MUST report the result to the issue/PR with
+           `gh issue comment NUMBER_PLACEHOLDER` or `gh pr comment NUMBER_PLACEHOLDER`.
+           Silent completion is NOT acceptable.
           PROMPT_EOF
           )
 
