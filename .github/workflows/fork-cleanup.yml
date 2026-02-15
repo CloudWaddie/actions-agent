@@ -1,0 +1,37 @@
+name: Fork Branch Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Cleanup fork branch after PR merge
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          # Get the branch name from the merged PR head
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          FORK_REPO="cloudwaddie-agent/${{ github.event.repository.name }}"
+          HEAD_REPO="${{ github.event.pull_request.head.repo.full_name }}"
+          
+          # Only cleanup if the PR was from our fork
+          if [[ "$HEAD_REPO" == "$FORK_REPO" ]]; then
+            echo "Cleaning up fork branch: $BRANCH_NAME"
+            
+            # Delete the branch from the fork using gh API
+            gh api "repos/$FORK_REPO/git/refs/heads/$BRANCH_NAME" \
+              -X DELETE \
+              || echo "Branch already deleted or does not exist"
+            
+            echo "Cleanup complete for branch: $BRANCH_NAME"
+          else
+            echo "Skipping cleanup - PR was not from fork ($HEAD_REPO != $FORK_REPO)"
+          fi
