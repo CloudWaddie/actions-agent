@@ -513,13 +513,15 @@ jobs:
              
               **GIT WORKFLOW**: Use fork-based workflow for all changes:
               1. Fork the repo: `gh repo fork --remote=false` (creates fork under cloudwaddie-agent account)
-              2. Create a new feature branch: `git checkout -b feature-branch`
+              2. Sync fork main branch from upstream BEFORE creating new branch:
+                 - `git remote add upstream https://github.com/CloudWaddie/actions-agent.git` (if not already added)
+                 - `git fetch upstream`
+                 - `git checkout -b feature-branch upstream/main` (branch off fresh upstream main, NOT stale fork main)
               3. Commit changes with clear, atomic commits
               4. Push to YOUR FORK: `git push https://github.com/cloudwaddie-agent/actions-agent.git feature-branch`
               5. Create PR from fork to upstream: `gh pr create --repo CloudWaddie/actions-agent --head cloudwaddie-agent:feature-branch --base main`
 
-              **IMPORTANT**: Always use fork workflow. Never push directly to the main repository.
-              Use `gh repo fork` to create a fork, then push to the fork and create a PR.
+              **IMPORTANT**: Always sync from upstream main before creating branches. Never branch from the fork's main (which may be stale).
 
           4. **Plan everything BEFORE starting** any work
 
