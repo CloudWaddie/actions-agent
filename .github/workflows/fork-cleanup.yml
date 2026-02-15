@@ -22,14 +22,33 @@ jobs:
           FORK_REPO="cloudwaddie-agent/${{ github.event.repository.name }}"
           HEAD_REPO="${{ github.event.pull_request.head.repo.full_name }}"
           
+          echo "=== Fork Cleanup Debug Info ==="
+          echo "Branch name: $BRANCH_NAME"
+          echo "Fork repo: $FORK_REPO"
+          echo "Head repo: $HEAD_REPO"
+          echo "================================"
+          
           # Only cleanup if the PR was from our fork
           if [[ "$HEAD_REPO" == "$FORK_REPO" ]]; then
             echo "Cleaning up fork branch: $BRANCH_NAME"
             
             # Delete the branch from the fork using gh API
-            gh api "repos/$FORK_REPO/git/refs/heads/$BRANCH_NAME" \
-              -X DELETE \
-              || echo "Branch already deleted or does not exist"
+            echo "Deleting branch via API..."
+            RESPONSE=$(gh api "repos/$FORK_REPO/git/refs/heads/$BRANCH_NAME" -X DELETE 2>&1)
+            EXIT_CODE=$?
+            
+            echo "API Response: $RESPONSE"
+            echo "Exit code: $EXIT_CODE"
+            
+            if [ $EXIT_CODE -eq 0 ]; then
+              echo "Successfully deleted branch: $BRANCH_NAME"
+            elif echo "$RESPONSE" | grep -q "Not Found"; then
+              echo "Branch already deleted or does not exist (404)"
+            else
+              echo "Failed to delete branch. Exit code: $EXIT_CODE"
+              echo "Error: $RESPONSE"
+              exit 1
+            fi
             
             echo "Cleanup complete for branch: $BRANCH_NAME"
           else
