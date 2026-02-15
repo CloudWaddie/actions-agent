@@ -98,7 +98,9 @@ jobs:
       
           # Validate: ensure it looks like a version string (not HTML/CSS)
           if [[ ! "$VERSION" =~ ^[a-zA-Z0-9._-]+$ ]] || [[ -z "$VERSION" ]]; then
-            VERSION
+            echo "VERSION environment variable is invalid or empty."
+            exit 1
+          fi
 
       - name: Cache OpenCode CLI
         uses: actions/cache@v5
