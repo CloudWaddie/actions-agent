@@ -33,7 +33,8 @@ jobs:
        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association || ''))
 
     permissions:
-      contents: read
+      contents: write
+      pull-requests: write
 
     steps:
       # Checkout with cloudwaddie-agent's PAT
@@ -477,13 +478,14 @@ jobs:
           2. **Break down work** into atomic, verifiable steps
           3. **GIT WORKFLOW** (for implementation tasks):
              
-             **YOU HAVE READ-ONLY WORKFLOW PERMISSIONS** - Cannot push directly to this repository.
-             **ALL GIT OPERATIONS MUST USE GH CLI WITH PAT TOKEN**:
-             - When creating commits: Use `git` commands as normal (PAT provides auth)
-             - When pushing: Use `git push` (PAT token provides write access via credentials)
-             - When creating PRs: Use `gh pr create` (authenticates via GH_TOKEN env var)
-             
-             **CRITICAL**: The workflow has `contents: read` permissions for security. All write operations happen through your PAT token (`GH_TOKEN` env var), not the workflow token.
+              **GIT WORKFLOW**: Use fork-based workflow for all changes:
+              1. Fork the repo: `gh repo fork` (creates fork under your account)
+              2. Add fork as remote: `git remote add fork https://github.com/cloudwaddie-agent/REPO.git`
+              3. Push to fork: `git push -u fork BRANCH`
+              4. Create PR: `gh pr create --base main --head YOUR_BRANCH`
+              
+              **IMPORTANT**: Always use fork workflow. Never push directly to the main repository.
+              Use `gh repo fork` to create a fork, then push to the fork and create a PR.
 
           4. **Plan everything BEFORE starting** any work
 
