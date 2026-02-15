@@ -98,40 +98,50 @@ Go to your repository's **Settings → Secrets and variables → Actions** and a
    - Value: Paste the entire JSON
    - Click **Add secret**
 
-### 2. Add Bot as Repository Collaborator
+### 2. Workflow Permissions (Security Configuration)
 
-**CRITICAL**: The bot account must have write access to the repository to add labels, reactions, and create PRs.
+**IMPORTANT**: This workflow uses **read-only permissions** for security.
 
-**Steps**:
-1. Go to your repository's **Settings → Collaborators and teams** (or **Settings → Access** for organizations)
-2. Click **"Add people"** or **"Invite a collaborator"**
-3. Search for the bot user account (e.g., `cloudwaddie-agent`)
-4. Select **"Write"** role (or **"Triage"** for read-only bots)
-5. Click **"Add [username] to this repository"**
-6. If the bot account has email notifications enabled, accept the invitation
-   - Alternatively, the invitation can be accepted via: https://github.com/[OWNER]/[REPO]/invitations
+**What this means**:
+- The workflow itself has `permissions: contents: read` (read-only access)
+- All write operations (comments, reactions, git operations) are performed via the `GH_PAT` token
+- The PAT token provides the necessary write access through `gh` CLI commands
+- **No contributor/collaborator access required** for the bot account
 
-**Why this is required**:
-- Without collaborator access, the bot will fail with `403 Forbidden` or `404 Not Found` errors
-- Even with a valid PAT token, GitHub checks if the token's owner has repository access
-- The bot needs write access to:
-  - Add and remove labels
-  - Add reactions to issues/PRs/comments
-  - Create pull requests
-  - Push to feature branches
+**Security benefits**:
+- Minimizes attack surface by limiting workflow permissions
+- Follows principle of least privilege
+- Write operations are explicit and auditable through PAT token usage
 
-**Security Note**: The bot should **NOT** have admin access. Write access is sufficient and safer.
+**What the bot CAN do** (via GH_PAT):
+- Add and remove emoji reactions to issues/PRs/comments
+- Post comments
+- Create pull requests
+- Commit and push changes
+- Run git operations
 
-### 3. Enable Workflow Permissions
+**What the bot CANNOT do** (intentionally restricted):
+- Manage labels (removed for security - uses emojis instead)
+- Direct workflow write access (uses read-only permissions)
 
-Go to your repository's **Settings → Actions → General**:
+### 3. Workflow Permissions (No Action Required)
 
-1. Scroll to **"Workflow permissions"**
-2. Select **"Read and write permissions"**
-3. Check **"Allow GitHub Actions to create and approve pull requests"**
-4. Click **Save**
+**No action needed** - the workflow is configured with read-only permissions by default.
 
-**Note**: These permissions apply to the built-in `GITHUB_TOKEN`, but the bot uses the `GH_PAT` secret which has its own permissions based on the collaborator access level.
+The workflow file specifies:
+```yaml
+permissions:
+  contents: read
+```
+
+This means the workflow itself only has read access. All write operations are performed through the `GH_PAT` token, which provides secure, auditable write access.
+
+**You do NOT need to**:
+- Enable "Read and write permissions" in repository settings
+- Grant the bot account contributor/collaborator access
+- Configure additional permissions
+
+The `GH_PAT` token handles all write operations securely through the `gh` CLI.
 
 ### 4. Rename the Bot (Optional)
 
@@ -167,11 +177,9 @@ If you want to use a different bot name instead of `cloudwaddie-agent`:
 1. **In any issue or pull request**, add a comment that mentions `@cloudwaddie-agent`
 2. The bot will:
    - Add an 👀 reaction (acknowledging it saw your message)
-   - Add a "cloudwaddie-agent: working" label
    - Process your request
-   - Reply with a comment
+   - **Always reply with at least one comment** explaining what it did or found
    - Change 👀 to 👍 when done
-   - Remove the working label
 
 ### Who Can Use the Bot
 
@@ -218,29 +226,32 @@ By default, GitHub sends email notifications for every workflow run, which can b
 3. Is the workflow file enabled? (Actions → Workflows → CloudWaddie Agent → Enable)
 4. Check the Actions tab for workflow run logs
 
+**Note**: The bot is configured to **always post at least one comment** explaining what it did or found. If no comment appears, check the workflow logs for errors.
+
 ### Bot fails with "403 Forbidden" or "404 Not Found" errors
 
 **Symptoms**:
 - Workflow runs but fails with errors like:
-  - `HTTP 404: Not Found (https://api.github.com/repos/OWNER/REPO/labels)`
-  - `GraphQL: [bot-name] does not have the correct permissions to execute AddLabelsToLabelable`
   - `failed to update issue: 403 Forbidden`
+  - `failed to create pull request: 404 Not Found`
 
-**Root Cause**: The bot user account is not added as a repository collaborator.
+**Root Cause**: The `GH_PAT` secret is invalid, expired, or has insufficient scopes.
 
 **Solution**:
-1. Go to repository **Settings → Collaborators and teams**
-2. Verify the bot account (e.g., `cloudwaddie-agent`) is listed
-3. If not, follow [Step 2: Add Bot as Repository Collaborator](#2-add-bot-as-repository-collaborator)
-4. Ensure the bot has **Write** role (not just Read)
-5. Accept the collaboration invitation if pending
+1. Verify the PAT token has the required scopes:
+   - ✅ `repo` (Full control of private repositories)
+   - ✅ `workflow` (Update GitHub Action workflows)
+2. If the token is expired or has wrong scopes, create a new one:
+   - Go to https://github.com/settings/tokens/new
+   - Select **Classic** token
+   - Check `repo` and `workflow` scopes
+   - Generate and copy the token
+3. Update the repository secret:
+   - Go to repository **Settings → Secrets → Actions**
+   - Update `GH_PAT` with the new token
+4. Re-run the workflow
 
-**To verify the bot's access**:
-```bash
-# As the bot user, check access level
-gh api /repos/OWNER/REPO/collaborators/BOT_USERNAME/permission
-# Should return: "permission": "write" or "admin"
-```
+**Note**: The workflow uses **read-only permissions** (`contents: read`) by design. All write operations are performed via the `GH_PAT` token through `gh` CLI, which is more secure than granting workflow-level write permissions.
 
 ### Bot fails with "Invalid token" or "Bad credentials"
 
@@ -277,18 +288,19 @@ The workflow has no timeout by default (uses GitHub's 6-hour limit). If you see 
 
 ### Bot accidentally pushes to main branch
 
-**Prevention**: The workflow has built-in safeguards:
-- Push step checks if current branch is `main` or `master` and blocks the push
+**Prevention**: The bot handles all git operations itself through `gh` CLI:
+- The bot is instructed to create feature branches and open PRs
+- No separate "Push changes" workflow step exists
 - Workflow instructions tell the bot to use fork workflow and create PRs
 
 **If this happens**:
-1. Check the "Push changes" step in the workflow has the branch check
-2. Enable branch protection rules:
+1. Enable branch protection rules:
    - Go to **Settings → Branches → Add rule**
    - Branch name pattern: `main` (or `master`)
    - Check **"Require pull request reviews before merging"**
    - Check **"Restrict who can push to matching branches"**
    - Save changes
+2. This will prevent direct pushes to main, even via the PAT token
 
 ### Bot gives poor responses
 
