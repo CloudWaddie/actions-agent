@@ -15,7 +15,14 @@ A GitHub **workflow template** that runs **cloudwaddie-agent** (an autonomous bo
    - `OPENCODE_AUTH_JSON` — (optional) your OpenCode auth JSON for premium models
 3. Ensure the workflow file is enabled.
 
+## Security Features
+- **Read-only workflow permissions** (`contents: read` only)
+- All write operations (comments, reactions, git operations) are performed via the `GH_PAT` token through `gh` CLI
+- **No label management** - uses emoji reactions instead (👀 when working, 👍 when done)
+- The bot itself handles all git operations (commits, pushes, PRs) - no separate workflow push step
+
 ## Notes
-- The workflow only runs on mentions by a **contributor** (OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR).
+- The workflow only runs on mentions by a **contributor** (OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR)
 - Uses **free OpenCode models** by default (opencode/big-pickle)
 - Authentication is optional - works with free models out of the box
+- The bot **always posts at least one comment** explaining what it did or found
