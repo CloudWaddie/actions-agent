@@ -53,7 +53,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
           # GH_TOKEN environment variable is automatically used by gh CLI
           # Verify authentication works
           gh auth status || echo "Using GH_TOKEN environment variable for authentication"
@@ -287,7 +286,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REPO: ${{ github.repository }}
         run: |
-          unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
           if [[ "$EVENT_NAME" == "issue_comment" ]]; then
             # Comment on issue or PR
             ISSUE_NUM="${{ github.event.issue.number }}"
@@ -365,7 +363,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
           if [[ -n "${{ steps.context.outputs.comment_id }}" ]]; then
             # React to comment
             gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
@@ -387,7 +384,6 @@ jobs:
           REPO_NAME: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
           export PATH="$HOME/.opencode/bin:$PATH"
 
           PROMPT=$(cat <<'PROMPT_EOF'
@@ -498,7 +494,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          unset GITHUB_TOKEN  # Ensure gh uses GH_TOKEN (PAT) not GITHUB_TOKEN (Actions token)
           if [[ -n "${{ steps.context.outputs.comment_id }}" ]]; then
             REACTION_ID=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
               --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' | head -1)
