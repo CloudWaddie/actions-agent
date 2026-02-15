@@ -501,19 +501,6 @@ jobs:
           PROMPT_EOF
           )
 
-          # Debug: Show environment variables
-          echo "DEBUG: Environment variables:"
-          echo "  COMMENT_AUTHOR=${COMMENT_AUTHOR}"
-          echo "  CONTEXT_NUMBER=${CONTEXT_NUMBER}"
-          echo "  REPO_NAME=${REPO_NAME}"
-          echo "  CONTEXT_TYPE=${CONTEXT_TYPE}"
-          echo "  CONTEXT_TITLE=${CONTEXT_TITLE}"
-          echo "  DEFAULT_BRANCH=${DEFAULT_BRANCH}"
-          echo "  USER_COMMENT length=${#USER_COMMENT}"
-          
-          # Debug: Show prompt before substitution
-          echo "DEBUG: Prompt has $(echo "$PROMPT" | grep -c PLACEHOLDER) placeholders before substitution"
-          
           PROMPT="${PROMPT//AUTHOR_PLACEHOLDER/$COMMENT_AUTHOR}"
           PROMPT="${PROMPT//REPO_PLACEHOLDER/$REPO_NAME}"
           PROMPT="${PROMPT//TYPE_PLACEHOLDER/$CONTEXT_TYPE}"
@@ -522,17 +509,6 @@ jobs:
           PROMPT="${PROMPT//BRANCH_PLACEHOLDER/$DEFAULT_BRANCH}"
           PROMPT="${PROMPT//COMMENT_PLACEHOLDER/$USER_COMMENT}"
           
-          # Debug: Show prompt after substitution
-          echo "DEBUG: Prompt has $(echo "$PROMPT" | grep -c PLACEHOLDER) placeholders after substitution"
-          echo "DEBUG: Checking if substitution worked..."
-          if echo "$PROMPT" | grep -q "PLACEHOLDER"; then
-            echo "ERROR: Substitution FAILED - placeholders still present!"
-            echo "DEBUG: First few placeholder occurrences:"
-            echo "$PROMPT" | grep -o ".*PLACEHOLDER.*" | head -5
-          else
-            echo "SUCCESS: All placeholders substituted!"
-          fi
-
           stdbuf -oL -eL bun run oh-my-opencode/dist/cli/index.js run "$PROMPT"
 
       - name: Update reaction
