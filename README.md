@@ -16,10 +16,10 @@ A GitHub **workflow template** that runs **cloudwaddie-agent** (an autonomous bo
 3. Ensure the workflow file is enabled.
 
 ## Security Features
-- **Read-only workflow permissions** (`contents: read` only)
+- **Write workflow permissions** (`contents: write`, `pull-requests: write`) for fork and PR workflow
 - All write operations (comments, reactions, git operations) are performed via the `GH_PAT` token through `gh` CLI
 - **No label management** - uses emoji reactions instead (👀 when working, 👍 when done)
-- The bot itself handles all git operations (commits, pushes, PRs) - no separate workflow push step
+- The bot uses **fork-based workflow**: forks the repo, pushes to fork, creates PR to main
 
 ## Notes
 - The workflow only runs on mentions by a **contributor** (OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR)

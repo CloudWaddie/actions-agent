@@ -100,48 +100,40 @@ Go to your repository's **Settings → Secrets and variables → Actions** and a
 
 ### 2. Workflow Permissions (Security Configuration)
 
-**IMPORTANT**: This workflow uses **read-only permissions** for security.
+**IMPORTANT**: This workflow uses **write permissions** for fork-based git workflow.
 
 **What this means**:
-- The workflow itself has `permissions: contents: read` (read-only access)
-- All write operations (comments, reactions, git operations) are performed via the `GH_PAT` token
-- The PAT token provides the necessary write access through `gh` CLI commands
-- **No contributor/collaborator access required** for the bot account
+- The workflow has `permissions: contents: write` and `pull-requests: write`
+- The bot creates a fork, pushes to the fork, and creates a PR to the main repository
+- This allows the agent to make changes even without contributor access to the main repo
 
-**Security benefits**:
-- Minimizes attack surface by limiting workflow permissions
-- Follows principle of least privilege
-- Write operations are explicit and auditable through PAT token usage
-
-**What the bot CAN do** (via GH_PAT):
+**What the bot CAN do**:
+- Fork the repository
 - Add and remove emoji reactions to issues/PRs/comments
 - Post comments
 - Create pull requests
-- Commit and push changes
+- Commit and push changes to fork
 - Run git operations
 
-**What the bot CANNOT do** (intentionally restricted):
+**What the bot CANNOT do**:
+- Push directly to the main repository (uses fork workflow instead)
 - Manage labels (removed for security - uses emojis instead)
-- Direct workflow write access (uses read-only permissions)
 
 ### 3. Workflow Permissions (No Action Required)
 
-**No action needed** - the workflow is configured with read-only permissions by default.
+**No action needed** - the workflow is configured with write permissions by default.
 
 The workflow file specifies:
 ```yaml
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 ```
 
-This means the workflow itself only has read access. All write operations are performed through the `GH_PAT` token, which provides secure, auditable write access.
-
-**You do NOT need to**:
-- Enable "Read and write permissions" in repository settings
-- Grant the bot account contributor/collaborator access
-- Configure additional permissions
-
-The `GH_PAT` token handles all write operations securely through the `gh` CLI.
+This allows the agent to:
+1. Fork the repo using `gh repo fork`
+2. Push changes to the fork
+3. Create a PR from the fork to the main repo
 
 ### 4. Rename the Bot (Optional)
 
@@ -251,7 +243,7 @@ By default, GitHub sends email notifications for every workflow run, which can b
    - Update `GH_PAT` with the new token
 4. Re-run the workflow
 
-**Note**: The workflow uses **read-only permissions** (`contents: read`) by design. All write operations are performed via the `GH_PAT` token through `gh` CLI, which is more secure than granting workflow-level write permissions.
+**Note**: The workflow uses **write permissions** (`contents: write`, `pull-requests: write`) to enable fork-based git workflow. The bot forks the repo, pushes to the fork, and creates a PR to the main repository.
 
 ### Bot fails with "Invalid token" or "Bad credentials"
 
