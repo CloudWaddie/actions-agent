@@ -315,8 +315,10 @@ jobs:
             # Issue opened/edited
             ISSUE_NUM="${{ github.event.issue.number }}"
             AUTHOR="${{ github.event.issue.user.login }}"
-            COMMENT_BODY="${{ github.event.issue.body }}"
             TITLE="${{ github.event.issue.title }}"
+            
+            # Use gh api to fetch body reliably (handles multiline, special chars)
+            COMMENT_BODY=$(gh api "repos/$REPO/issues/${ISSUE_NUM}" --jq '.body // ""')
             
             echo "type=issue" >> $GITHUB_OUTPUT
             echo "number=${ISSUE_NUM}" >> $GITHUB_OUTPUT
@@ -331,8 +333,10 @@ jobs:
             # PR opened/edited
             PR_NUM="${{ github.event.pull_request.number }}"
             AUTHOR="${{ github.event.pull_request.user.login }}"
-            COMMENT_BODY="${{ github.event.pull_request.body }}"
             TITLE="${{ github.event.pull_request.title }}"
+            
+            # Use gh api to fetch body reliably (handles multiline, special chars)
+            COMMENT_BODY=$(gh api "repos/$REPO/pulls/${PR_NUM}" --jq '.body // ""')
             
             echo "type=pr" >> $GITHUB_OUTPUT
             echo "number=${PR_NUM}" >> $GITHUB_OUTPUT
