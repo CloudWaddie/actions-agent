@@ -354,6 +354,77 @@ PROMPT_EOF
 
 You can customize this prompt to change how the bot responds.
 
+## Logging and Monitoring
+
+### Workflow Logs
+
+All workflow runs generate detailed logs in the **Actions** tab of your repository. These logs include:
+
+- **Step timestamps**: Each step shows start and end times
+- **Error messages**: Warnings are logged with specific context (e.g., "Warning: Failed to add reaction")
+- **Cache operations**: Cache hit/miss status and validation results
+- **API calls**: GitHub API operations and their results
+
+### Understanding Log Output
+
+#### Reaction Errors
+The workflow logs warnings for non-critical operations like emoji reactions:
+```
+Warning: Failed to add reaction - comment_id=123456789
+Warning: failed to add +1 reaction on issue
+```
+These are non-blocking - the bot continues even if reactions fail.
+
+#### Cache Validation
+Cache operations include validation:
+```
+Bun node_modules cache valid
+OpenCode CLI cache valid
+oh-my-opencode dist cache valid
+```
+If cache is corrupted, you'll see:
+```
+Warning: oh-my-opencode dist cache may be corrupted (missing entry point), will rebuild
+```
+
+#### Version Fetch Fallback
+If the OpenCode version API fails, the workflow uses a fallback:
+```
+Warning: Failed to fetch OpenCode version from API (network issue or API down). Using fallback: 1.0.40
+```
+
+### Monitoring Recommendations
+
+#### Enable Workflow Run Notifications
+
+1. Go to your repository **Settings → Notifications**
+2. Configure how you want to be notified about:
+   - Workflow runs
+   - Pull requests
+   - Issues
+
+#### Set Up Status Checks
+
+For production use, consider:
+
+1. **Branch Protection**: Enable required status checks on main branch
+2. **Slack Integration**: Use GitHub Apps to post workflow status to Slack
+3. **GitHub Alerts**: Configure alerts for workflow failures
+
+ Usage
+
+#### Track- **GitHub Actions Minutes**: Monitor usage in your repository or organization settings
+- **API Token Usage**: If using premium models, track API consumption via your provider's dashboard
+
+### Debugging Failed Runs
+
+1. Go to **Actions → [Workflow Run] → [Failed Job]**
+2. Expand the failed step to see error messages
+3. Check for:
+   - Authentication errors (invalid or expired `GH_PAT`)
+   - Network timeouts (external API failures)
+   - Permission errors (insufficient token scopes)
+
 ## Support
 
 - **Issues**: Open an issue in this repository

@@ -90,17 +90,35 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
 
+      - name: Validate Bun cache
+        run: |
+          # Validate bun cache is usable
+          if [ -d "oh-my-opencode/node_modules" ]; then
+            # Check for corrupted node_modules (check for bin directory as sanity check)
+            if [ -d "oh-my-opencode/node_modules/.bin" ]; then
+              echo "Bun node_modules cache valid"
+            else
+              echo "Warning: Bun node_modules cache may be corrupted (missing .bin), will reinstall"
+              rm -rf oh-my-opencode/node_modules
+            fi
+          fi
+
       - name: Get OpenCode latest version
         id: opencode-version
         run: |
+          # Fallback version - update periodically to stay current
+          FALLBACK_VERSION="1.0.40"
+          
           # Fetch version with validation
-          VERSION=$(curl -s https://opencode.ai/api/version 2>/dev/null | head -n 1 | tr -cd '[:alnum:].-')
+          VERSION=$(curl -s --max-time 10 https://opencode.ai/api/version 2>/dev/null | head -n 1 | tr -cd '[:alnum:].-')
       
           # Validate: ensure it looks like a version string (not HTML/CSS)
           if [[ ! "$VERSION" =~ ^[a-zA-Z0-9._-]+$ ]] || [[ -z "$VERSION" ]]; then
-            echo "VERSION environment variable is invalid or empty."
-            exit 1
+            echo "Warning: Failed to fetch OpenCode version from API (network issue or API down). Using fallback: $FALLBACK_VERSION"
+            VERSION="$FALLBACK_VERSION"
           fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Cache OpenCode CLI
         uses: actions/cache@v5
@@ -110,6 +128,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-opencode-
 
+      - name: Validate OpenCode CLI cache
+        run: |
+          # Validate OpenCode CLI cache is usable
+          if [ -d "$HOME/.opencode/bin" ]; then
+            if [ -f "$HOME/.opencode/bin/opencode" ]; then
+              echo "OpenCode CLI cache valid"
+            else
+              echo "Warning: OpenCode CLI cache may be corrupted (missing binary), will reinstall"
+              rm -rf ~/.opencode
+            fi
+          fi
+
       - name: Cache oh-my-opencode dist
         uses: actions/cache@v5
         with:
@@ -117,6 +147,19 @@ jobs:
           key: ${{ runner.os }}-omo-dist-${{ hashFiles('oh-my-opencode/src/**/*.ts', 'oh-my-opencode/package.json') }}
           restore-keys: |
             ${{ runner.os }}-omo-dist-
+
+      - name: Validate oh-my-opencode dist cache
+        run: |
+          # Validate oh-my-opencode dist cache is usable
+          if [ -d "oh-my-opencode/dist" ]; then
+            # Check for essential dist files as sanity check
+            if [ -f "oh-my-opencode/dist/cli/index.js" ] || [ -f "oh-my-opencode/dist/index.js" ]; then
+              echo "oh-my-opencode dist cache valid"
+            else
+              echo "Warning: oh-my-opencode dist cache may be corrupted (missing entry point), will rebuild"
+              rm -rf oh-my-opencode/dist
+            fi
+          fi
 
       # Build oh-my-opencode
       - name: Build oh-my-opencode
@@ -399,14 +442,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
+          log_error() {
+            echo "Warning: Failed to add reaction - $1"
+          }
+          
           if [[ -n "${{ steps.context.outputs.comment_id }}" ]]; then
             # React to comment
-            gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
-              -X POST -f content="eyes" || true
+            if ! gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
+              -X POST -f content="eyes" 2>&1; then
+              log_error "comment_id=${{ steps.context.outputs.comment_id }}"
+            fi
           elif [[ -n "${{ steps.context.outputs.number }}" ]]; then
             # React to issue/PR itself
-            gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
-              -X POST -f content="eyes" || true
+            if ! gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
+              -X POST -f content="eyes" 2>&1; then
+              log_error "issue/pr number=${{ steps.context.outputs.number }}"
+            fi
           fi
 
       - name: Run oh-my-opencode
@@ -554,34 +605,50 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
+          log_error() {
+            echo "Warning: Failed to update reaction - $1"
+          }
+          
           if [[ -n "${{ steps.context.outputs.comment_id }}" ]]; then
             REACTION_ID=$(gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
-              --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' | head -1)
+              --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' 2>/dev/null | head -1)
             if [[ -n "$REACTION_ID" ]]; then
-              gh api -X DELETE "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions/${REACTION_ID}" || true
+              if ! gh api -X DELETE "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions/${REACTION_ID}" 2>&1; then
+                log_error "failed to delete eyes reaction on comment"
+              fi
             fi
 
-            gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
-              -X POST -f content="+1" || true
+            if ! gh api "/repos/${{ github.repository }}/issues/comments/${{ steps.context.outputs.comment_id }}/reactions" \
+              -X POST -f content="+1" 2>&1; then
+              log_error "failed to add +1 reaction on comment"
+            fi
           fi
 
           if [[ "${{ github.event_name }}" == "issues" ]] || [[ "${{ github.event_name }}" == "pull_request" ]]; then
             if [[ "${{ steps.context.outputs.type }}" == "pr" ]]; then
               REACTION_ID=$(gh api "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions" \
-                --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' | head -1)
+                --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' 2>/dev/null | head -1)
               if [[ -n "$REACTION_ID" ]]; then
-                gh api -X DELETE "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions/${REACTION_ID}" || true
+                if ! gh api -X DELETE "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions/${REACTION_ID}" 2>&1; then
+                  log_error "failed to delete eyes reaction on PR"
+                fi
               fi
-              gh api "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions" \
-                -X POST -f content="+1" || true
+              if ! gh api "/repos/${{ github.repository }}/pulls/${{ steps.context.outputs.number }}/reactions" \
+                -X POST -f content="+1" 2>&1; then
+                log_error "failed to add +1 reaction on PR"
+              fi
             else
               REACTION_ID=$(gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
-                --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' | head -1)
+                --jq '.[] | select(.content == "eyes" and .user.login == "cloudwaddie-agent") | .id' 2>/dev/null | head -1)
               if [[ -n "$REACTION_ID" ]]; then
-                gh api -X DELETE "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions/${REACTION_ID}" || true
+                if ! gh api -X DELETE "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions/${REACTION_ID}" 2>&1; then
+                  log_error "failed to delete eyes reaction on issue"
+                fi
               fi
-              gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
-                -X POST -f content="+1" || true
+              if ! gh api "/repos/${{ github.repository }}/issues/${{ steps.context.outputs.number }}/reactions" \
+                -X POST -f content="+1" 2>&1; then
+                log_error "failed to add +1 reaction on issue"
+              fi
             fi
           fi
 
