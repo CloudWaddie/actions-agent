@@ -191,6 +191,9 @@ jobs:
           if [[ -z "$OPENCODE_AUTH_JSON" ]]; then
             echo "No auth provided - using free OpenCode models"
             jq '.model = "opencode/big-pickle"' "$OPENCODE_JSON" > /tmp/oc.json && mv /tmp/oc.json "$OPENCODE_JSON"
+          elif [[ "$OPENAI_FLAG" == "--openai=yes" ]] || [[ "$COPILOT_FLAG" == "--copilot=yes" ]]; then
+            echo "OpenAI/Copilot available - using GPT-4o for Sisyphus"
+            jq '.model = "opencode/gpt-4o"' "$OPENCODE_JSON" > /tmp/oc.json && mv /tmp/oc.json "$OPENCODE_JSON"
           fi
 
           # Configure oh-my-opencode prompt_append with ultrawork mode
