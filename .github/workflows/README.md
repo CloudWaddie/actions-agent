@@ -36,7 +36,7 @@ Go to your repository's **Settings → Secrets and variables → Actions** and a
 
 **Purpose**: Use premium OpenCode models (Claude, GPT, etc.) instead of free models.
 
-**Without this secret**: The bot uses free OpenCode models like `opencode/big-pickle` (works fine for basic tasks).
+**Without this secret**: The bot uses free OpenCode models like `opencode/minimax-m2.5-free` (works fine for basic tasks).
 
 **With this secret**: The bot can use premium models for better responses.
 
@@ -296,14 +296,14 @@ The workflow has no timeout by default (uses GitHub's 6-hour limit). If you see 
 
 ### Bot gives poor responses
 
-If using free models (`opencode/big-pickle`):
+If using free models (`opencode/minimax-m2.5-free`):
 - Responses may be less accurate than premium models
 - Consider adding `OPENCODE_AUTH_JSON` secret with premium API keys
 
 ## Models Used
 
 ### Default (Free)
-- `opencode/big-pickle` - Free OpenCode model
+- `opencode/minimax-m2.5-free` - Free OpenCode model
 
 ### With Authentication (Premium)
 The bot uses different models based on available credentials:
@@ -333,13 +333,13 @@ The bot uses different models based on available credentials:
 
 Edit the workflow file and modify:
 ```yaml
-# Set default model to opencode/big-pickle
+# Set default model to opencode/minimax-m2.5-free
 CONFIG=~/.config/opencode/opencode.json
 if [ -f "$CONFIG" ]; then
-  jq '(.model = "opencode/big-pickle")' "$CONFIG" > /tmp/oc.json && mv /tmp/oc.json "$CONFIG"
+  jq '(.model = "opencode/minimax-m2.5-free")' "$CONFIG" > /tmp/oc.json && mv /tmp/oc.json "$CONFIG"
 ```
 
-Change `opencode/big-pickle` to your preferred model.
+Change `opencode/minimax-m2.5-free` to your preferred model.
 
 ### Adjust Bot Behavior
 
