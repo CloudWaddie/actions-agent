@@ -1,6 +1,0 @@
-{
-  "name": "actions-agent",
-  "description": "GitHub Actions template to run cloudwaddie-agent (by CloudWaddie) on @cloudwaddie-agent mentions",
-  "categories": ["automation", "bot", "ai"],
-  "filePatterns": [".github/workflows/cloudwaddie-agent.yml", "README.md"]
-}
