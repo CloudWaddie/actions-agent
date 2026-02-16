@@ -1,6 +1,6 @@
 # actions-agent (CloudWaddie Agent)
 
-A GitHub **workflow template** that runs **cloudwaddie-agent** (an autonomous bot made by CloudWaddie) on @cloudwaddie-agent mentions in issue/PR comments.
+A collection of GitHub **workflows** that run **cloudwaddie-agent** (an autonomous bot made by CloudWaddie) on @cloudwaddie-agent mentions in issue/PR comments.
 
 ## What it does
 - Listens for **issue/PR comments** that mention `@cloudwaddie-agent`
@@ -9,11 +9,20 @@ A GitHub **workflow template** that runs **cloudwaddie-agent** (an autonomous bo
 - Posts a helpful comment back via `gh`
 
 ## Setup
-1. **Create a repo from this template** (or copy the workflow file).
-2. Add repo secrets:
+
+### Copy/Paste Workflows (Recommended)
+
+Copy the workflow files from the [`.github/workflows/`](.github/workflows/) folder in this repository:
+
+1. **Copy these files to your `.github/workflows/` folder:**
+   - [`.github/workflows/fork-cleanup.yml`](.github/workflows/fork-cleanup.yml) - Cleans up fork branches after PR merge
+   - [`.github/workflows/cloudwaddie-agent.yml`](.github/workflows/cloudwaddie-agent.yml) - Main agent workflow
+
+2. **Add repo secrets:**
    - `GH_PAT` — GitHub PAT with repo scope
    - `OPENCODE_AUTH_JSON` — (optional) your OpenCode auth JSON for premium models
-3. Ensure the workflow file is enabled.
+
+3. **Enable the workflow** in your repository's Actions tab.
 
 ## Security Features
 - **Write workflow permissions** (`contents: write`, `pull-requests: write`) for fork and PR workflow
