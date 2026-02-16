@@ -32,6 +32,6 @@ Copy the workflow files from the [`.github/workflows/`](.github/workflows/) fold
 
 ## Notes
 - The workflow only runs on mentions by a **contributor** (OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR)
-- Uses **free OpenCode models** by default (opencode/big-pickle)
+- Uses **free OpenCode models** by default (opencode/minimax-m2.5-free)
 - Authentication is optional - works with free models out of the box
 - The bot **always posts at least one comment** explaining what it did or found
