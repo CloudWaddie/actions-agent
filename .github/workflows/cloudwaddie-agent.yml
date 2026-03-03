@@ -685,7 +685,7 @@ jobs:
           exit $EXIT_CODE
 
       - name: Notify on agent interruption
-        if: failure() && steps.agent-run.outcome == 'failure'
+        if: steps.agent-run.outcome != 'success'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
@@ -696,7 +696,7 @@ jobs:
             exit 0
           fi
           BODY=$(cat <<'NOTIFY_EOF'
-          :warning: **Agent interrupted** - the GitHub Actions runner was shut down before I could finish (exit code 143/SIGTERM).
+          :warning: **Agent interrupted** - the GitHub Actions runner was shut down or cancelled before I could finish.
 
           This can happen when:
           - The runner VM was preempted or recycled by GitHub
