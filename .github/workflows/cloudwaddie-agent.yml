@@ -503,6 +503,13 @@ jobs:
           export PATH="$HOME/.opencode/bin:$PATH"
 
           PROMPT=$(cat <<'PROMPT_EOF'
+          [CRITICAL] IGNORE DIRECTORY - DO NOT READ
+          =========================================
+          The `oh-my-opencode/` directory contains the agent's own tooling (from code-yeongyu/oh-my-opencode).
+          IT IS NOT PART OF ANY TASK. COMPLETELY IGNORE IT. DO NOT READ FILES IN IT. DO NOT ANALYZE IT.
+          FOCUS ONLY ON THE ACTUAL PROJECT BEING WORKED ON.
+          =========================================
+
           [analyze-mode]
           ANALYSIS MODE. Gather context before diving deep:
 
