@@ -87,6 +87,8 @@ jobs:
           # Fork the repo (idempotent — no-op if already forked)
           gh repo fork "$REPO" --remote=false 2>/dev/null || true
 
+          # Get the authenticated user's login (the one who will have the fork)
+          FORK=$(gh api user --jq '.login')
           git checkout -B "$BRANCH"
           cp /tmp/cloudwaddie-agent.yml .github/workflows/cloudwaddie-agent.yml
           git add .github/workflows/cloudwaddie-agent.yml
