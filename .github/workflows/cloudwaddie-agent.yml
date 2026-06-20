@@ -42,7 +42,7 @@ jobs:
 
     steps:
       # Checkout with cloudwaddie-agent's PAT
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
@@ -134,7 +134,7 @@ jobs:
           bun-version: latest
 
       - name: Checkout oh-my-opencode dev branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: code-yeongyu/oh-my-opencode
           ref: dev
